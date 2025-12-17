@@ -1,0 +1,56 @@
+# Core dependencies
+pandas>=2.2.0
+numpy
+requests==2.31.0
+python-dotenv==1.0.0
+
+# LLM providers for advanced prospectus analysis
+openai>=1.0.0
+anthropic>=0.7.0
+groq>=0.4.0
+google-generativeai>=0.3.0
+
+# Vector database for document chunking and retrieval
+chromadb>=0.4.22
+
+# Financial data APIs
+yfinance==0.2.18
+alpha-vantage==2.3.1
+# finnhub-python removed - not suitable for pre-IPO analysis
+
+# News and sentiment analysis
+newsapi-python==0.2.6
+textblob==0.17.1
+vaderSentiment==3.3.2
+
+# Data visualization
+matplotlib==3.7.1
+seaborn==0.12.2
+plotly==5.17.0
+
+# Web framework
+streamlit==1.28.1
+flask==3.0.0
+
+# Data processing
+beautifulsoup4==4.12.2
+lxml==4.9.3
+
+# PDF processing for prospectus parsing
+PyPDF2==3.0.1
+pdfplumber==0.9.0
+tabula-py==2.8.2
+
+# Machine learning (for predictions)
+scikit-learn==1.3.0
+
+# Report generation
+jinja2==3.1.2
+reportlab==4.0.4
+
+# Logging
+loguru==0.7.2
+
+# Web automation for SEBI document extraction
+selenium==4.15.2
+webdriver-manager==4.0.1

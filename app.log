@@ -1,0 +1,335 @@
+
+  You can now view your Streamlit app in your browser.
+
+  Local URL: http://localhost:8501
+  Network URL: http://192.168.29.148:8501
+
+  For better performance, install the Watchdog module:
+
+  $ xcode-select --install
+  $ pip install watchdog
+            
+Successfully stored 4 chunks for Vidya Wires
+Successfully stored 4 chunks for Vidya Wires
+Vector DB enabled, searching for context...
+Retrieved 3 context chunks for query: financial data revenue profit EBITDA ratios Vidya ...
+Retrieved 3 context chunks from vector DB
+Financial context length: 2826
+financial_context:  
+Relevant financial context:
+DRAFT RED HERRING PROSPECTUS
+                
+                Vidya Wires
+                (A Company incorporated under the Companies Act, 2013)
+                
+                COMPANY OVERVIEW:
+                Vidya Wires is a leading company in the Technology sector with strong market presence and growth potential The company has demonstrated consistent financial performance and strategic market positioning KEY FINANCIAL METRICS (Restated Financials):
+                
+                Revenue Performance:
+                - FY 2023: ₹1,250 Crores (Growth: 35%)
+                - FY 2022: ₹1,050 Crores  
+                - FY 2021: ₹890 Crores
+                - 3-Year CAGR: 35%
+                
+                Profitability Metrics:
+                - Net Profit Margin: 15%
+                - EBITDA Margin: 20 0%
+                - Return on Equity (ROE): 22%
+                - Return on Assets (ROA): 19 0%
+                - Return on Invested Capital (ROIC): 21
+---
+DRAFT RED HERRING PROSPECTUS
+                
+                VIdya Wires
+                (A Company incorporated under the Companies Act, 2013)
+                
+                COMPANY OVERVIEW:
+                VIdya Wires is a leading company in the Technology sector with strong market presence and growth potential The company has demonstrated consistent financial performance and strategic market positioning KEY FINANCIAL METRICS (Restated Financials):
+                
+                Revenue Performance:
+                - FY 2023: ₹1,250 Crores (Growth: 35%)
+                - FY 2022: ₹1,050 Crores  
+                - FY 2021: ₹890 Crores
+                - 3-Year CAGR: 35%
+                
+                Profitability Metrics:
+                - Net Profit Margin: 15%
+                - EBITDA Margin: 20 0%
+                - Return on Equity (ROE): 22%
+                - Return on Assets (ROA): 19 0%
+                - Return on Invested Capital (ROIC): 21
+---
+15%
+                - EBITDA Margin: 20 0%
+                - Return on Equity (ROE): 22%
+                - Return on Assets (ROA): 19 0%
+                - Return on Invested Capital (ROIC): 21 0%
+                
+                Valuation Ratios:
+                - Price-to-Earnings (P/E) Ratio: 28x
+                - Price-to-Book (P/B) Ratio: 2 8x
+                - Enterprise Value/EBITDA: 24 0x
+                - Price-to-Sales Ratio: 1 9x
+                
+                Financial Health Ratios:
+                - Current Ratio: 2 1
+                - Quick Ratio: 1 8
+                - Debt-to-Equity Ratio: 0 2
+                - Interest Coverage Ratio: 15x
+                
+                BUSINESS MODEL & COMPETITIVE POSITIONING:
+                The company operates with a scalable and sustainable business model in the technology space
+financial prompt:  Extract financial metrics for Vidya Wires from the document text.
+
+
+Relevant financial context:
+DRAFT RED HERRING PROSPECTUS
+                
+                Vidya Wires
+                (A Company incorporated under the Companies Act, 2013)
+                
+                COMPANY OVERVIEW:
+                Vidya Wires is a leading company in the Technology sector with strong market presence and growth potential The company has demonstrated consistent financial performance and strategic market positioning KEY FINANCIAL METRICS (Restated Financials):
+                
+                Revenue Performance:
+                - FY 2023: ₹1,250 Crores (Growth: 35%)
+                - FY 2022: ₹1,050 Crores  
+                - FY 2021: ₹890 Crores
+                - 3-Year CAGR: 35%
+                
+                Profitability Metrics:
+                - Net Profit Margin: 15%
+                - EBITDA Margin: 20 0%
+                - Return on Equity (ROE): 22%
+                - Return on Assets (ROA): 19 0%
+                - Return on Invested Capital (ROIC): 21
+---
+DRAFT RED HERRING PROSPECTUS
+                
+                VIdya Wires
+                (A Company incorporated under the Companies Act, 2013)
+                
+                COMPANY OVERVIEW:
+                VIdya Wires is a leading company in the Technology sector with strong market presence and growth potential The company has demonstrated consistent financial performance and strategic market positioning KEY FINANCIAL METRICS (Restated Financials):
+                
+                Revenue Performance:
+                - FY 2023: ₹1,250 Crores (Growth: 35%)
+                - FY 2022: ₹1,050 Crores  
+                - FY 2021: ₹890 Crores
+                - 3-Year CAGR: 35%
+                
+                Profitability Metrics:
+                - Net Profit Margin: 15%
+                - EBITDA Margin: 20 0%
+                - Return on Equity (ROE): 22%
+                - Return on Assets (ROA): 19 0%
+                - Return on Invested Capital (ROIC): 21
+---
+15%
+                - EBITDA Margin: 20 0%
+                - Return on Equity (ROE): 22%
+                - Return on Assets (ROA): 19 0%
+                - Return on Invested Capital (ROIC): 21 0%
+                
+                Valuation Ratios:
+                - Price-to-Earnings (P/E) Ratio: 28x
+                - Price-to-Book (P/B) Ratio: 2 8x
+                - Enterprise Value/EBITDA: 24 0x
+                - Price-to-Sales Ratio: 1 9x
+                
+                Financial Health Ratios:
+                - Current Ratio: 2 1
+                - Quick Ratio: 1 8
+                - Debt-to-Equity Ratio: 0 2
+                - Interest Coverage Ratio: 15x
+                
+                BUSINESS MODEL & COMPETITIVE POSITIONING:
+                The company operates with a scalable and sustainable business model in the technology space
+
+CRITICAL: Respond with ONLY complete, valid JSON. No markdown, no explanations, no truncation.
+The JSON MUST end with both "extraction_confidence" and "data_completeness" fields and a closing brace.
+
+Required JSON structure (use exact field names):
+{
+    "trailing_pe_ratio": float or null,
+    "price_to_book_ratio": float or null,
+    "price_to_sales_ratio": float or null,
+    "gross_profit_margin": float or null,
+    "operating_profit_margin": float or null,
+    "net_profit_margin": float or null,
+    "return_on_equity": float or null,
+    "return_on_assets": float or null,
+    "current_ratio": float or null,
+    "quick_ratio": float or null,
+    "debt_to_equity_ratio": float or null,
+    "debt_to_assets_ratio": float or null,
+    "interest_coverage_ratio": float or null,
+    "revenue_growth_3yr": float or null,
+    "profit_growth_3yr": float or null,
+    "ebitda_growth_3yr": float or null,
+    "extraction_confidence": float between 0.0-1.0,
+    "data_completeness": float between 0.0-1.0
+}        
+Attempt 1: Calling LLM with max_tokens=2000
+Response length: 0
+Empty response on attempt 1
+Attempt 2: Calling LLM with max_tokens=3000
+Response length: 0
+Empty response on attempt 2
+Attempt 3: Calling LLM with max_tokens=4000
+Response length: 0
+Empty response on attempt 3
+Retrieved 3 context chunks for query: competitive analysis market position Technology co...
+benchmarking prompt:  
+        Analyze competitive position of Vidya Wires in Technology sector.
+
+        Find:
+        - Market position (leader/challenger/follower)
+        - Main competitors
+        - Key advantages
+        - Industry trends
+
+        
+Relevant competitive context:
+Ratio: 15x
+                
+                BUSINESS MODEL & COMPETITIVE POSITIONING:
+                The company operates with a scalable and sustainable business model in the technology space Key competitive advantages include:
+                - Market leadership with 25% market share
+                - Strong brand recognition and customer loyalty
+                - Advanced technology platform and R&D capabilities
+                - Experienced management team with proven track record
+                
+                PEER COMPARISON:
+                The company's financial metrics compare favorably to industry peers:
+                - Revenue growth above industry average of 30 0%
+                - ROE higher than sector median of 19
+---
+Ratio: 15x
+                
+                BUSINESS MODEL & COMPETITIVE POSITIONING:
+                The company operates with a scalable and sustainable business model in the technology space Key competitive advantages include:
+                - Market leadership with 25% market share
+                - Strong brand recognition and customer loyalty
+                - Advanced technology platform and R&D capabilities
+                - Experienced management team with proven track record
+                
+                PEER COMPARISON:
+                The company's financial metrics compare favorably to industry peers:
+                - Revenue growth above industry average of 30 0%
+                - ROE higher than sector median of 19
+---
+The company's financial metrics compare favorably to industry peers:
+                - Revenue growth above industry average of 30 0%
+                - ROE higher than sector median of 19 0%
+                - Debt levels lower than industry average
+                
+                USE OF IPO PROCEEDS:
+                Total Issue Size: ₹800 Crores
+                - Capacity Expansion & Capex: 40% (₹320 Cr)
+                - Working Capital Requirements: 25% (₹200 Cr)  
+                - Debt Repayment: 20% (₹160 Cr)
+                - General Corporate Purposes: 15% (₹120 Cr)
+                
+                KEY RISK FACTORS:
+                - Intense market competition and pricing pressure
+                - Regulatory changes in the technology sector
+                - Economic slowdown affecting demand
+                - Raw material price volatility
+                - Technology disruption risks
+                
+                MANAGEMENT ASSESSMENT:
+                - Strong promoter background with 20 years experience
+                - Professional management team with relevant expertise
+                - Good corporate governance practices
+                - Track record of consistent performance
+                
+                GROWTH STRATEGY:
+                - Market expansion to Tier-2 and Tier-3 cities
+                - New product development and innovation
+                - Strategic partnerships and alliances  
+                - Technology upgrades and digitalization
+
+        Return JSON format only:
+        {
+            "sector_comparison": {
+                "revenue_growth_vs_sector": "above/below/inline",
+                "profitability_vs_sector": "above/below/inline",
+                "debt_levels_vs_sector": "above/below/inline",
+                "key_metrics_comparison": ["metric1: company vs sector", "..."]
+            },
+            "peer_companies": [
+                {"name": "Company Name", "similarity": "high/medium/low", "comparison": "strengths vs this peer"}
+            ],
+            "market_position": "leader/challenger/follower/niche",
+            "competitive_advantages": ["advantage1", "advantage2", "..."],
+            "competitive_disadvantages": ["disadvantage1", "disadvantage2", "..."],
+            "industry_trends": ["trend1", "trend2", "..."],
+            "market_share_analysis": "detailed market share information if available"
+        }
+
+        
+Retrieved 0 context chunks for query: IPO pricing underwriters fund utilization Vidya Wi...
+ipo specifics prompt:  
+        Extract IPO information for Vidya Wires.
+
+        Find:
+        - IPO price range
+        - Use of funds breakdown
+        - Lead managers
+        - Business model assessment
+        - Key risks
+
+        
+
+        Return JSON only:
+        {
+            "ipo_pricing_analysis": {
+                "price_band": "Rs X-Y per share",
+                "valuation_method": "methodology used",
+                "peer_comparison": "comparison details",
+                "pricing_justification": "reasons for pricing"
+            },
+            "underwriter_quality": {
+                "lead_managers": ["BRLM1", "BRLM2"],
+                "reputation_score": "high/medium/low",
+                "track_record": "recent IPO success rate"
+            },
+            "use_of_funds_analysis": {
+                "capex_percentage": float,
+                "debt_repayment_percentage": float,
+                "working_capital_percentage": float,
+                "other_purposes": "details of other uses"
+            },
+            "lock_in_analysis": {
+                "promoter_lock_in": "duration and percentage",
+                "investor_lock_in": "details if any",
+                "impact_assessment": "potential impact on stock"
+            },
+            "promoter_background": {
+                "experience_years": int,
+                "industry_expertise": "relevant experience",
+                "track_record": "previous business success",
+                "governance_score": "high/medium/low"
+            },
+            "business_model_assessment": {
+                "sustainability": "high/medium/low",
+                "scalability": "high/medium/low",
+                "competitive_moat": "strength of competitive position",
+                "technology_edge": "technological advantages if any"
+            },
+            "growth_strategy_analysis": {
+                "expansion_timeline": "planned expansion phases",
+                "market_opportunity": "size and growth potential", 
+                "execution_capability": "ability to execute strategy",
+                "capital_requirements": "additional capital needs"
+            },
+            "regulatory_compliance": {
+                "compliance_status": "compliant/issues",
+                "pending_approvals": "any pending regulatory approvals",
+                "regulatory_risks": ["risk1", "risk2"]
+            }
+        }
+
+        
+  Stopping...
