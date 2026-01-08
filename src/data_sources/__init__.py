@@ -303,15 +303,16 @@ class DataSourceManager:
         # Determine which prospectus integration to use
         use_enhanced_parser = (use_enhanced if use_enhanced is not None 
                              else self.use_enhanced)
-        
+        print("Data::", data)
         if use_enhanced_parser and self.enhanced_prospectus_source:
             # Use enhanced prospectus integration
             logger.info(f"Using enhanced prospectus parsing for {company_name}")
             try:
                 data = integrate_enhanced_prospectus_data(company_name, data)
-                
+                print("Data after enhanced integration", data)
                 # Add processing metrics
                 enhanced_data = data.get('enhanced_prospectus')
+                print("Enhanced data:", enhanced_data)
                 if enhanced_data:
                     data['prospectus_quality'] = {
                         'quality_score': enhanced_data.data_quality_score,

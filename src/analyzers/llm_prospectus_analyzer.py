@@ -160,6 +160,12 @@ class LLMProspectusAnalyzer:
             groq_key = os.getenv('GROQ_API_KEY')
             if groq_key:
                 self.client = Groq(api_key=groq_key)
+                # Store available models for fallback
+                self.groq_models = [
+                    "llama-3.1-8b-instant",      # Primary choice
+                    "llama3-8b-8192",       # Alternative option
+                ]
+                logger.info("Groq client initialized with model fallback support")
             else:
                 logger.warning("Groq API key not found")
                 
@@ -222,6 +228,7 @@ class LLMProspectusAnalyzer:
     def chunk_and_store_prospectus(self, pdf_text: str, company_name: str, sector: str = "", ipo_date: str = None):
         """
         Chunk the prospectus document and store in vector database for retrieval.
+        Clears the vector database before storing new PDF to start from empty state.
         """
         if not self.use_vector_db:
             logger.warning("Vector database not available, skipping document storage")
@@ -229,6 +236,9 @@ class LLMProspectusAnalyzer:
         
         try:
             logger.info(f"Chunking and storing prospectus for {company_name}")
+            
+            # Clear vector database before storing new PDF
+            self.clear_vector_database()
             
             # Split document into chunks
             chunks = self._chunk_document(pdf_text)
@@ -506,52 +516,36 @@ Required JSON structure (use exact field names):
                 if response:
                     # Parse JSON response with improved error handling
                     try:
-                        # Clean the response to extract JSON
-                        json_text = response.strip()
+                        # Use robust JSON extraction method
+                        json_text = self._extract_json_from_response(response)
                         
-                        # Remove markdown code blocks if present
-                        if json_text.startswith('```json'):
-                            json_text = json_text[7:]  # Remove ```json
-                        if json_text.startswith('```'):
-                            json_text = json_text[3:]   # Remove ```
-                        if json_text.endswith('```'):
-                            json_text = json_text[:-3]  # Remove ending ```
+                        if not json_text:
+                            # Check if response looks truncated and we should retry
+                            is_truncated = (
+                                'extraction_confidence' not in response or
+                                'data_completeness' not in response or
+                                response.count('{') != response.count('}')
+                            )
+                            
+                        # Use robust JSON parsing with fallbacks
+                        metrics_data = self._parse_json_with_fallbacks(response, "financial metrics")
                         
-                        json_text = json_text.strip()
-                        
-                        # Check if response looks truncated
-                        is_truncated = (
-                            not json_text.endswith('}') or 
-                            json_text.count('{') != json_text.count('}') or
-                            'extraction_confidence' not in json_text or
-                            'data_completeness' not in json_text
-                        )
-                        
-                        if is_truncated and attempt < 2:
-                            print(f"Response appears truncated, trying again with more tokens...")
-                            continue
-                        
-                        # Apply additional JSON fixes
-                        json_text = self._fix_json_issues(json_text)
-                        
-                        # Log the cleaned JSON for debugging
-                        print(f"Cleaned JSON text (first 300 chars): {json_text[:300]}...")
-                        print(f"Cleaned JSON text (last 300 chars): ...{json_text[-300:]}")
-                        
-                        # Validate JSON structure before parsing
-                        if not json_text.strip().startswith('{'):
-                            raise json.JSONDecodeError("Response doesn't start with '{'", json_text, 0)
-                        
-                        metrics_data = json.loads(json_text)
-                        
-                        # Validate that we have the required fields
-                        if 'extraction_confidence' not in metrics_data:
-                            metrics_data['extraction_confidence'] = 0.5
-                        if 'data_completeness' not in metrics_data:
-                            metrics_data['data_completeness'] = 0.5
-                        
-                        print(f"Successfully parsed JSON with confidence: {metrics_data.get('extraction_confidence', 'unknown')}")
-                        return LLMFinancialMetrics(**metrics_data)
+                        if metrics_data:
+                            # Validate that we have the required fields
+                            if 'extraction_confidence' not in metrics_data:
+                                metrics_data['extraction_confidence'] = 0.5
+                            if 'data_completeness' not in metrics_data:
+                                metrics_data['data_completeness'] = 0.5
+                            
+                            print(f"Successfully parsed JSON with confidence: {metrics_data.get('extraction_confidence', 'unknown')}")
+                            return LLMFinancialMetrics(**metrics_data)
+                        else:
+                            # If JSON parsing fails completely, continue to next attempt
+                            if attempt < 2:
+                                print(f"JSON parsing failed completely, trying again with more tokens...")
+                                continue
+                            else:
+                                raise json.JSONDecodeError("Could not extract valid JSON after all attempts", response, 0)
                         
                     except json.JSONDecodeError as e:
                         print(f"JSON parsing error on attempt {attempt + 1}: {e}")
@@ -642,32 +636,29 @@ Required JSON structure (use exact field names):
             
             if response:
                 try:
-                    # Clean the response to extract JSON
-                    json_text = response.strip()
+                    # Use robust JSON parsing with fallbacks
+                    benchmark_data = self._parse_json_with_fallbacks(response, "benchmarking")
                     
-                    # Remove markdown code blocks if present
-                    if json_text.startswith('```json'):
-                        json_text = json_text[7:]
-                    if json_text.startswith('```'):
-                        json_text = json_text[3:]
-                    if json_text.endswith('```'):
-                        json_text = json_text[:-3]
+                    if benchmark_data:
+                        return BenchmarkingAnalysis(**benchmark_data)
+                    else:
+                        logger.error("Could not extract valid JSON from benchmarking response")
+                        # Try to extract partial data
+                        partial_data = self._extract_partial_benchmarking(response)
+                        if partial_data:
+                            return BenchmarkingAnalysis(**partial_data)
+                        
+                except Exception as parse_e:
+                    logger.error(f"Error parsing benchmarking data structure: {parse_e}")
+                    logger.error(f"Response was: {response[:500]}...")
                     
-                    json_text = json_text.strip()
-                    
-                    # Fix common JSON issues
-                    json_text = self._fix_json_issues(json_text)
-                    
-                    benchmark_data = json.loads(json_text)
-                    return BenchmarkingAnalysis(**benchmark_data)
-                except json.JSONDecodeError as e:
-                    logger.error(f"Failed to parse benchmarking response: {e}")
-                    logger.error(f"Response was: {response[:300]}...")
-                    
-                    # Try to extract partial data
-                    partial_data = self._extract_partial_benchmarking(response)
-                    if partial_data:
-                        return BenchmarkingAnalysis(**partial_data)
+                    # Try to extract partial data as final fallback
+                    try:
+                        partial_data = self._extract_partial_benchmarking(response)
+                        if partial_data:
+                            return BenchmarkingAnalysis(**partial_data)
+                    except Exception as partial_e:
+                        logger.error(f"Partial data extraction also failed: {partial_e}")
             
         except Exception as e:
             logger.error(f"Error in benchmarking analysis: {e}")
@@ -764,24 +755,31 @@ Required JSON structure (use exact field names):
             
             if response:
                 try:
-                    # Clean the response to extract JSON
-                    json_text = response.strip()
+                    # Use robust JSON parsing with fallbacks
+                    ipo_data = self._parse_json_with_fallbacks(response, "IPO specifics")
                     
-                    # Remove markdown code blocks if present
-                    if json_text.startswith('```json'):
-                        json_text = json_text[7:]
-                    if json_text.startswith('```'):
-                        json_text = json_text[3:]
-                    if json_text.endswith('```'):
-                        json_text = json_text[:-3]
-                    
-                    json_text = json_text.strip()
-                    
-                    ipo_data = json.loads(json_text)
-                    return IPOSpecificMetrics(**ipo_data)
-                except json.JSONDecodeError as e:
-                    logger.error(f"Failed to parse IPO specifics response: {e}")
-                    logger.error(f"Response was: {response[:200]}...")
+                    if ipo_data:
+                        return IPOSpecificMetrics(**ipo_data)
+                    else:
+                        logger.error("Could not extract valid JSON from response")
+                        # Try to extract partial data using fallback method
+                        try:
+                            partial_data = self._extract_partial_ipo_data(response)
+                            if partial_data:
+                                return IPOSpecificMetrics(**partial_data)
+                        except Exception as fallback_e:
+                            logger.error(f"Fallback parsing also failed: {fallback_e}")
+                        
+                except Exception as parse_e:
+                    logger.error(f"Error parsing IPO data structure: {parse_e}")
+                    logger.error(f"Response was: {response[:500]}...")
+                    # Try to extract partial data as final fallback
+                    try:
+                        partial_data = self._extract_partial_ipo_data(response)
+                        if partial_data:
+                            return IPOSpecificMetrics(**partial_data)
+                    except Exception as final_fallback_e:
+                        logger.error(f"Final fallback parsing also failed: {final_fallback_e}")
             
         except Exception as e:
             logger.error(f"Error in IPO specifics analysis: {e}")
@@ -824,16 +822,33 @@ Required JSON structure (use exact field names):
                 return response.content[0].text
                 
             elif self.provider == "groq" and self.client:
-                response = self.client.chat.completions.create(
-                    model="mixtral-8x7b-32768",  # or "llama2-70b-4096"
-                    messages=[
-                        {"role": "system", "content": "You are a financial analyst specializing in IPO analysis."},
-                        {"role": "user", "content": prompt}
-                    ],
-                    max_tokens=max_tokens,
-                    temperature=temperature
-                )
-                return response.choices[0].message.content
+                # Try models with fallback support
+                models_to_try = getattr(self, 'groq_models', ["llama3-70b-8192", "llama3-8b-8192"])
+                
+                for model_name in models_to_try:
+                    try:
+                        response = self.client.chat.completions.create(
+                            model=model_name,
+                            messages=[
+                                {"role": "system", "content": "You are a financial analyst specializing in IPO analysis."},
+                                {"role": "user", "content": prompt}
+                            ],
+                            max_tokens=max_tokens,
+                            temperature=temperature
+                        )
+                        return response.choices[0].message.content
+                    except Exception as e:
+                        if "decommissioned" in str(e).lower() or "not found" in str(e).lower():
+                            logger.warning(f"Groq model {model_name} is not available, trying next...")
+                            continue
+                        else:
+                            # For other errors, log and continue to next model
+                            logger.warning(f"Groq model {model_name} failed: {e}")
+                            continue
+                
+                # If all models failed
+                logger.error("All Groq models failed")
+                return None
                 
             elif self.provider == "gemini" and self.client:
                 # Gemini uses different generation config
@@ -990,6 +1005,19 @@ Required JSON structure (use exact field names):
             json_text = json_text.replace('"true"', 'true')  # Fix quoted boolean values
             json_text = json_text.replace('"false"', 'false')  # Fix quoted boolean values
             
+            # Fix missing commas between JSON properties (common LLM error)
+            # Look for patterns like `"key": "value" "nextkey":` and add comma
+            json_text = re.sub(r'("\s*:\s*"[^"]*")\s+(")', r'\1, \2', json_text)
+            json_text = re.sub(r'("\s*:\s*[^",}\]]+)\s+(")', r'\1, \2', json_text)
+            json_text = re.sub(r'(\])\s+(")', r'\1, \2', json_text)  # After arrays
+            json_text = re.sub(r'(\})\s+(")', r'\1, \2', json_text)  # After objects
+            
+            # Fix missing commas in arrays
+            json_text = re.sub(r'("\s*)\s+(")', r'\1, \2', json_text)
+            
+            # Fix trailing commas (which are invalid in JSON)
+            json_text = re.sub(r',\s*([}\]])', r'\1', json_text)
+            
             # Handle incomplete JSON objects (more robust approach)
             if json_text.startswith('{') and not json_text.endswith('}'):
                 # Try to find where the JSON got truncated
@@ -1053,6 +1081,122 @@ Required JSON structure (use exact field names):
         except Exception as e:
             logger.error(f"Error fixing JSON issues: {e}")
             return json_text
+
+    def _extract_json_from_response(self, response: str) -> str:
+        """Extract JSON from LLM response, handling extra data after JSON."""
+        try:
+            # Remove markdown code blocks first
+            text = response.strip()
+            
+            if '```json' in text:
+                start_idx = text.find('```json') + 7
+                end_idx = text.find('```', start_idx)
+                if end_idx != -1:
+                    text = text[start_idx:end_idx].strip()
+            elif '```' in text:
+                start_idx = text.find('```') + 3
+                end_idx = text.find('```', start_idx)
+                if end_idx != -1:
+                    text = text[start_idx:end_idx].strip()
+            
+            # Find the first opening brace
+            start_idx = text.find('{')
+            if start_idx == -1:
+                return None
+                
+            # Track braces to find the end of the JSON object
+            brace_count = 0
+            in_string = False
+            escape_next = False
+            end_idx = -1
+            
+            for i in range(start_idx, len(text)):
+                char = text[i]
+                
+                if escape_next:
+                    escape_next = False
+                    continue
+                    
+                if char == '\\':
+                    escape_next = True
+                    continue
+                    
+                if char == '"' and not escape_next:
+                    in_string = not in_string
+                elif not in_string:
+                    if char == '{':
+                        brace_count += 1
+                    elif char == '}':
+                        brace_count -= 1
+                        if brace_count == 0:
+                            end_idx = i + 1
+                            break
+            
+            if end_idx > start_idx:
+                json_text = text[start_idx:end_idx]
+                # Validate it's proper JSON by attempting to parse
+                json.loads(json_text)
+                return json_text
+            else:
+                logger.warning("Could not find complete JSON object in response")
+                return None
+                
+        except json.JSONDecodeError as e:
+            logger.error(f"Extracted text is not valid JSON: {e}")
+            return None
+        except Exception as e:
+            logger.error(f"Error extracting JSON from response: {e}")
+            return None
+
+    def _parse_json_with_fallbacks(self, response: str, description: str = "analysis") -> Optional[Dict[str, Any]]:
+        """Parse JSON with multiple fallback strategies."""
+        attempts = [
+            ("Direct JSON extraction", lambda: self._extract_json_from_response(response)),
+            ("Fixed JSON", lambda: self._fix_json_issues(self._extract_json_from_response(response) or "")),
+            ("Regex-based extraction", lambda: self._extract_json_regex_fallback(response)),
+        ]
+        
+        for attempt_name, extract_func in attempts:
+            try:
+                json_text = extract_func()
+                if json_text:
+                    # Try to parse the JSON
+                    data = json.loads(json_text)
+                    logger.info(f"Successfully parsed {description} JSON using {attempt_name}")
+                    return data
+            except json.JSONDecodeError as e:
+                logger.debug(f"{attempt_name} failed for {description}: {e}")
+                continue
+            except Exception as e:
+                logger.debug(f"{attempt_name} error for {description}: {e}")
+                continue
+        
+        logger.error(f"All JSON parsing attempts failed for {description}")
+        return None
+    
+    def _extract_json_regex_fallback(self, response: str) -> Optional[str]:
+        """Extract JSON using regex as a last resort."""
+        try:
+            # Look for JSON-like patterns
+            import re
+            
+            # Find the most JSON-like content between braces
+            json_pattern = r'\{[^{}]*(?:\{[^{}]*\}[^{}]*)*\}'
+            matches = re.findall(json_pattern, response, re.DOTALL)
+            
+            for match in matches:
+                # Try to clean and validate each match
+                try:
+                    cleaned = self._fix_json_issues(match)
+                    json.loads(cleaned)  # Validate
+                    return cleaned
+                except:
+                    continue
+            
+            return None
+        except Exception as e:
+            logger.error(f"Regex fallback extraction failed: {e}")
+            return None
 
     def _extract_partial_benchmarking(self, response: str) -> Dict[str, Any]:
         """Extract partial benchmarking data when JSON parsing fails."""
@@ -1175,6 +1319,48 @@ Required JSON structure (use exact field names):
             logger.error(f"Error extracting partial financial data: {e}")
             return None
 
+    def _extract_partial_ipo_data(self, response: str) -> Dict[str, Any]:
+        """Extract partial IPO data when JSON parsing fails."""
+        try:
+            # Default structure for IPO metrics
+            partial_data = {
+                "ipo_pricing_analysis": {},
+                "underwriter_quality": {},
+                "use_of_funds_analysis": {},
+                "lock_in_analysis": {},
+                "promoter_background": {},
+                "business_model_assessment": {},
+                "growth_strategy_analysis": {},
+                "regulatory_compliance": {}
+            }
+            
+            # Try to extract key information using regex and text parsing
+            import re
+            
+            # Extract price band
+            price_match = re.search(r'"price_band":\s*"([^"]+)"', response)
+            if price_match:
+                partial_data["ipo_pricing_analysis"]["price_band"] = price_match.group(1)
+            
+            # Extract lead managers
+            managers_match = re.search(r'"lead_managers":\s*\[([^\]]+)\]', response)
+            if managers_match:
+                managers_text = managers_match.group(1)
+                # Clean up and extract manager names
+                managers = [m.strip('"').strip() for m in managers_text.split(',')]
+                partial_data["underwriter_quality"]["lead_managers"] = managers
+            
+            # Extract sustainability
+            sustainability_match = re.search(r'"sustainability":\s*"([^"]+)"', response)
+            if sustainability_match:
+                partial_data["business_model_assessment"]["sustainability"] = sustainability_match.group(1)
+            
+            logger.info("Extracted partial IPO data using regex fallback")
+            return partial_data
+            
+        except Exception as e:
+            logger.error(f"Error extracting partial IPO data: {e}")
+            return None
 
     def find_similar_ipos(self, query_text: str, sector: str = "", n_results: int = 5) -> List[Dict[str, Any]]:
         """Find similar IPOs based on text similarity and sector."""
@@ -1437,6 +1623,41 @@ Required JSON structure (use exact field names):
         except Exception as e:
             logger.error(f"Error getting sector insights: {e}")
             return {}
+    
+    def clear_vector_database(self):
+        """
+        Clear all stored documents from the vector database.
+        """
+        if not self.use_vector_db:
+            logger.warning("Vector database not available, skipping clear operation")
+            return
+        
+        try:
+            # Get collection stats before clearing
+            stats = self.get_vector_db_stats()
+            total_docs = stats.get('total_chunks', 0)
+            logger.info(f"Clearing vector database before storing new PDF. Current stats: {total_docs} documents")
+            
+            if total_docs > 0:
+                # Clear all collections
+                for collection_name, collection in self.collections.items():
+                    try:
+                        # Get all documents in the collection
+                        all_docs = collection.get()
+                        if all_docs and all_docs['ids']:
+                            collection.delete(ids=all_docs['ids'])
+                            logger.info(f"Cleared {len(all_docs['ids'])} documents from {collection_name} collection")
+                    except Exception as e:
+                        logger.warning(f"Error clearing collection {collection_name}: {e}")
+                        
+                logger.info(f"Vector database cleared successfully. Removed {total_docs} total documents.")
+            else:
+                logger.info("Vector database is already empty, no need to clear.")
+                
+        except Exception as e:
+            logger.error(f"Error clearing vector database: {e}")
+            raise
+
 # Enhanced integration functions
 def integrate_llm_analysis(company_name: str, pdf_text: str, sector: str = "", 
                         provider: str = "openai", pdf_path: str = None, 

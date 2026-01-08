@@ -626,56 +626,50 @@ class EnhancedProspectusParser:
         ]
     
     def parse_enhanced(self, pdf_path: str, company_name: str) -> Optional[EnhancedFinancialData]:
-        """Enhanced parsing with multiple extraction methods."""
+        """Return document content for vector database without financial extraction."""
         if not PDF_LIBS_AVAILABLE:
             logger.error("PDF processing libraries not available")
             return None
         
         try:
-            logger.info(f"Enhanced parsing for {company_name}: {pdf_path}")
+            logger.info(f"Processing document content for {company_name}: {pdf_path}")
             
-            # Extract text using multiple methods
+            # Extract text using multiple methods for vector database
             text_content = self._extract_text_enhanced(pdf_path)
             if not text_content:
+                logger.warning(f"No text content extracted from {pdf_path}")
                 return None
             
-            # Extract structured data
-            financial_data = self._extract_enhanced_financials(text_content)
-            qualitative_data = self._extract_qualitative_data(text_content)
+            logger.info(f"Extracted {len(text_content)} characters from document")
             
-            # Validate data
-            is_valid, validation_issues = self.validator.validate_financial_data(financial_data)
-            
-            # Create enhanced financial data object
+            # Create enhanced financial data object with raw document content
+            # No financial extraction - just return the document content for vector DB
             enhanced_data = EnhancedFinancialData(
-                revenue_data=financial_data.get('revenue', {}),
-                profit_data=financial_data.get('profit', {}),
-                ebitda_data=financial_data.get('ebitda', {}),
-                assets_data=financial_data.get('assets', {}),
-                liabilities_data=financial_data.get('liabilities', {}),
-                equity_data=financial_data.get('equity', {}),
-                cash_flow_data=financial_data.get('cash_flow', {}),
-                key_ratios=self._calculate_ratios(financial_data),
-                growth_metrics=self._calculate_growth_metrics(financial_data),
-                business_description=qualitative_data.get('business', ''),
-                risk_factors=qualitative_data.get('risks', []),
-                use_of_funds=qualitative_data.get('use_of_funds', []),
-                company_strengths=qualitative_data.get('strengths', []),
-                competitive_advantages=qualitative_data.get('advantages', []),
+                revenue_data={},  # Empty - no extraction
+                profit_data={},   # Empty - no extraction
+                ebitda_data={},   # Empty - no extraction
+                assets_data={},   # Empty - no extraction
+                liabilities_data={},  # Empty - no extraction
+                equity_data={},   # Empty - no extraction
+                cash_flow_data={}, # Empty - no extraction
+                key_ratios={},    # Empty - no calculation needed
+                growth_metrics={}, # Empty - no calculation needed
+                business_description=text_content,  # Store full document content here
+                risk_factors=[],   # Empty - let vector DB handle this
+                use_of_funds=[],   # Empty - let vector DB handle this
+                company_strengths=[], # Empty - let vector DB handle this
+                competitive_advantages=[], # Empty - let vector DB handle this
                 extraction_date=datetime.now().isoformat(),
-                data_quality_score=0.0,  # Will be calculated
-                source_confidence=0.8 if is_valid else 0.5,
-                validation_flags=validation_issues
+                data_quality_score=1.0,  # High score since we have document content
+                source_confidence=0.9,   # High confidence for raw document
+                validation_flags=[]      # No validation issues for raw content
             )
             
-            # Calculate quality score
-            enhanced_data.data_quality_score = self.validator.calculate_quality_score(enhanced_data)
-            
-            logger.info(f"Enhanced parsing complete. Quality score: {enhanced_data.data_quality_score:.2f}")
+            logger.info(f"Document content prepared for vector database: {company_name}")
             return enhanced_data
             
         except Exception as e:
-            logger.error(f"Enhanced parsing failed for {company_name}: {e}")
+            logger.error(f"Document processing failed for {company_name}: {e}")
             return None
         
         finally:
@@ -1133,11 +1127,11 @@ class EnhancedProspectusDataSource:
         """Get enhanced IPO financial data with caching."""
         try:
             # Check cache first (unless force refresh)
-            if not force_refresh and self.cache_manager:
-                cached_data = self.cache_manager.get_cached_data(company_name)
-                if cached_data:
-                    logger.info(f"Using cached data for {company_name} (quality: {cached_data.data_quality_score:.2f})")
-                    return cached_data
+            # if not force_refresh and self.cache_manager:
+            #     cached_data = self.cache_manager.get_cached_data(company_name)
+            #     if cached_data:
+            #         logger.info(f"Using cached data for {company_name} (quality: {cached_data.data_quality_score:.2f})")
+            #         return cached_data
             
             logger.info(f"Fetching fresh prospectus data for {company_name}")
             
@@ -1157,12 +1151,15 @@ class EnhancedProspectusDataSource:
                 try:
                     # Download document
                     pdf_path = self._download_document_enhanced(filing['url'], company_name)
+                    print("pdf_path:", pdf_path)
                     if not pdf_path:
                         continue
                     
                     # Parse with enhanced parser
                     enhanced_data = self.parser.parse_enhanced(pdf_path, company_name)
                     
+                    print("enhanced_data:", enhanced_data)
+
                     if enhanced_data and enhanced_data.data_quality_score > 0.3:  # Minimum quality threshold
                         # Cache the results
                         if self.cache_manager:
@@ -1313,11 +1310,11 @@ class EnhancedProspectusDataSource:
 
 # Integration function for backward compatibility
 def integrate_enhanced_prospectus_data(company_name: str, existing_data: Dict[str, Any]) -> Dict[str, Any]:
-    """Enhanced integration function with existing IPO data."""
+    """Enhanced integration function for feeding document content to vector database."""
     enhanced_source = EnhancedProspectusDataSource()
     
     try:
-        # Get enhanced prospectus data
+        # Get document content for vector database
         enhanced_data = enhanced_source.get_enhanced_ipo_data(company_name)
         
         # Get basic summary
@@ -1332,19 +1329,20 @@ def integrate_enhanced_prospectus_data(company_name: str, existing_data: Dict[st
             existing_data['data_quality_score'] = enhanced_data.data_quality_score
             existing_data['prospectus_extraction_date'] = enhanced_data.extraction_date
             
-            # Merge financial data
-            if enhanced_data.revenue_data:
-                existing_data['enhanced_revenue'] = enhanced_data.revenue_data
-            if enhanced_data.profit_data:
-                existing_data['enhanced_profit'] = enhanced_data.profit_data
+            # Store document content for vector database and app usage
+            existing_data['document_content'] = enhanced_data.business_description  # Full document content
+            existing_data['prospectus_text'] = enhanced_data.business_description   # For app.py compatibility
+            existing_data['document_ready_for_vectordb'] = True
             
-            logger.info(f"Enhanced {company_name} with prospectus data (quality: {enhanced_data.data_quality_score:.2f})")
+            logger.info(f"Document content prepared for {company_name} (quality: {enhanced_data.data_quality_score:.2f})")
         else:
-            logger.warning(f"No enhanced prospectus data for {company_name}")
+            logger.warning(f"No document content available for {company_name}")
+            existing_data['document_ready_for_vectordb'] = False
         
         return existing_data
         
     except Exception as e:
-        logger.error(f"Enhanced prospectus integration failed for {company_name}: {e}")
+        logger.error(f"Document processing failed for {company_name}: {e}")
         existing_data['prospectus_error'] = str(e)
+        existing_data['document_ready_for_vectordb'] = False
         return existing_data

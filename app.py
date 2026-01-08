@@ -71,6 +71,8 @@ class IPOReviewAgent:
         
         # For IPOs, we don't have stock symbols yet, so we collect limited data
         raw_data = self.data_manager.collect_ipo_data(company_name, ipo_details)
+        print("Collected raw data", raw_data)
+        print("Collected raw data keys", raw_data.keys())
         # Create company basics from IPO information
         company = CompanyBasics(
             name=company_name,
@@ -119,113 +121,125 @@ class IPOReviewAgent:
             logger.info(f"Prospectus text length: {len(prospectus_text)}")
             
             # For demo purposes, if no real prospectus text is found, use sample text
-            if not prospectus_text:
-                logger.info("No prospectus text found, creating realistic sample data for LLM demo")
+            # if not prospectus_text:
+            #     logger.info("No prospectus text found, creating realistic sample data for LLM demo")
+            #     print("prospectus not found")
+            #     # Create sector-specific financial data
+            #     sector_data = {
+            #         'Technology': {
+            #             'revenue_growth': '35%', 'profit_margin': '15%', 'roe': '22%', 
+            #             'pe_ratio': '28x', 'current_ratio': '2.1', 'debt_equity': '0.2'
+            #         },
+            #         'Healthcare': {
+            #             'revenue_growth': '18%', 'profit_margin': '12%', 'roe': '16%',
+            #             'pe_ratio': '24x', 'current_ratio': '1.8', 'debt_equity': '0.3'
+            #         },
+            #         'Financial Services': {
+            #             'revenue_growth': '15%', 'profit_margin': '20%', 'roe': '14%',
+            #             'pe_ratio': '12x', 'current_ratio': '1.2', 'debt_equity': '3.5'
+            #         },
+            #         'Manufacturing': {
+            #             'revenue_growth': '12%', 'profit_margin': '8%', 'roe': '13%',
+            #             'pe_ratio': '16x', 'current_ratio': '1.5', 'debt_equity': '0.6'
+            #         }
+            #     }
                 
-                # Create sector-specific financial data
-                sector_data = {
-                    'Technology': {
-                        'revenue_growth': '35%', 'profit_margin': '15%', 'roe': '22%', 
-                        'pe_ratio': '28x', 'current_ratio': '2.1', 'debt_equity': '0.2'
-                    },
-                    'Healthcare': {
-                        'revenue_growth': '18%', 'profit_margin': '12%', 'roe': '16%',
-                        'pe_ratio': '24x', 'current_ratio': '1.8', 'debt_equity': '0.3'
-                    },
-                    'Financial Services': {
-                        'revenue_growth': '15%', 'profit_margin': '20%', 'roe': '14%',
-                        'pe_ratio': '12x', 'current_ratio': '1.2', 'debt_equity': '3.5'
-                    },
-                    'Manufacturing': {
-                        'revenue_growth': '12%', 'profit_margin': '8%', 'roe': '13%',
-                        'pe_ratio': '16x', 'current_ratio': '1.5', 'debt_equity': '0.6'
-                    }
-                }
+            #     sector = ipo_details.get('sector', 'Technology')
+            #     financial_data = sector_data.get(sector, sector_data['Technology'])
                 
-                sector = ipo_details.get('sector', 'Technology')
-                financial_data = sector_data.get(sector, sector_data['Technology'])
+            #     raw_data['prospectus_text'] = f"""
+            #     DRAFT RED HERRING PROSPECTUS
                 
-                raw_data['prospectus_text'] = f"""
-                DRAFT RED HERRING PROSPECTUS
+            #     {company_name}
+            #     (A Company incorporated under the Companies Act, 2013)
                 
-                {company_name}
-                (A Company incorporated under the Companies Act, 2013)
+            #     COMPANY OVERVIEW:
+            #     {company_name} is a leading company in the {sector} sector with strong market presence and growth potential. The company has demonstrated consistent financial performance and strategic market positioning.
                 
-                COMPANY OVERVIEW:
-                {company_name} is a leading company in the {sector} sector with strong market presence and growth potential. The company has demonstrated consistent financial performance and strategic market positioning.
+            #     KEY FINANCIAL METRICS (Restated Financials):
                 
-                KEY FINANCIAL METRICS (Restated Financials):
+            #     Revenue Performance:
+            #     - FY 2023: ₹1,250 Crores (Growth: {financial_data['revenue_growth']})
+            #     - FY 2022: ₹1,050 Crores  
+            #     - FY 2021: ₹890 Crores
+            #     - 3-Year CAGR: {financial_data['revenue_growth']}
                 
-                Revenue Performance:
-                - FY 2023: ₹1,250 Crores (Growth: {financial_data['revenue_growth']})
-                - FY 2022: ₹1,050 Crores  
-                - FY 2021: ₹890 Crores
-                - 3-Year CAGR: {financial_data['revenue_growth']}
+            #     Profitability Metrics:
+            #     - Net Profit Margin: {financial_data['profit_margin']}
+            #     - EBITDA Margin: {float(financial_data['profit_margin'].strip('%')) + 5}%
+            #     - Return on Equity (ROE): {financial_data['roe']}
+            #     - Return on Assets (ROA): {float(financial_data['roe'].strip('%')) - 3}%
+            #     - Return on Invested Capital (ROIC): {float(financial_data['roe'].strip('%')) - 1}%
                 
-                Profitability Metrics:
-                - Net Profit Margin: {financial_data['profit_margin']}
-                - EBITDA Margin: {float(financial_data['profit_margin'].strip('%')) + 5}%
-                - Return on Equity (ROE): {financial_data['roe']}
-                - Return on Assets (ROA): {float(financial_data['roe'].strip('%')) - 3}%
-                - Return on Invested Capital (ROIC): {float(financial_data['roe'].strip('%')) - 1}%
+            #     Valuation Ratios:
+            #     - Price-to-Earnings (P/E) Ratio: {financial_data['pe_ratio']}
+            #     - Price-to-Book (P/B) Ratio: {float(financial_data['pe_ratio'].strip('x')) / 10:.1f}x
+            #     - Enterprise Value/EBITDA: {float(financial_data['pe_ratio'].strip('x')) - 4}x
+            #     - Price-to-Sales Ratio: {float(financial_data['pe_ratio'].strip('x')) / 15:.1f}x
                 
-                Valuation Ratios:
-                - Price-to-Earnings (P/E) Ratio: {financial_data['pe_ratio']}
-                - Price-to-Book (P/B) Ratio: {float(financial_data['pe_ratio'].strip('x')) / 10:.1f}x
-                - Enterprise Value/EBITDA: {float(financial_data['pe_ratio'].strip('x')) - 4}x
-                - Price-to-Sales Ratio: {float(financial_data['pe_ratio'].strip('x')) / 15:.1f}x
+            #     Financial Health Ratios:
+            #     - Current Ratio: {financial_data['current_ratio']}
+            #     - Quick Ratio: {float(financial_data['current_ratio']) - 0.3:.1f}
+            #     - Debt-to-Equity Ratio: {financial_data['debt_equity']}
+            #     - Interest Coverage Ratio: {15 if sector == 'Technology' else 8}x
                 
-                Financial Health Ratios:
-                - Current Ratio: {financial_data['current_ratio']}
-                - Quick Ratio: {float(financial_data['current_ratio']) - 0.3:.1f}
-                - Debt-to-Equity Ratio: {financial_data['debt_equity']}
-                - Interest Coverage Ratio: {15 if sector == 'Technology' else 8}x
+            #     BUSINESS MODEL & COMPETITIVE POSITIONING:
+            #     The company operates with a scalable and sustainable business model in the {sector.lower()} space. Key competitive advantages include:
+            #     - Market leadership with {25 if sector == 'Technology' else 15}% market share
+            #     - Strong brand recognition and customer loyalty
+            #     - Advanced technology platform and R&D capabilities
+            #     - Experienced management team with proven track record
                 
-                BUSINESS MODEL & COMPETITIVE POSITIONING:
-                The company operates with a scalable and sustainable business model in the {sector.lower()} space. Key competitive advantages include:
-                - Market leadership with {25 if sector == 'Technology' else 15}% market share
-                - Strong brand recognition and customer loyalty
-                - Advanced technology platform and R&D capabilities
-                - Experienced management team with proven track record
+            #     PEER COMPARISON:
+            #     The company's financial metrics compare favorably to industry peers:
+            #     - Revenue growth above industry average of {float(financial_data['revenue_growth'].strip('%')) - 5}%
+            #     - ROE higher than sector median of {float(financial_data['roe'].strip('%')) - 3}%
+            #     - Debt levels lower than industry average
                 
-                PEER COMPARISON:
-                The company's financial metrics compare favorably to industry peers:
-                - Revenue growth above industry average of {float(financial_data['revenue_growth'].strip('%')) - 5}%
-                - ROE higher than sector median of {float(financial_data['roe'].strip('%')) - 3}%
-                - Debt levels lower than industry average
+            #     USE OF IPO PROCEEDS:
+            #     Total Issue Size: ₹800 Crores
+            #     - Capacity Expansion & Capex: 40% (₹320 Cr)
+            #     - Working Capital Requirements: 25% (₹200 Cr)  
+            #     - Debt Repayment: 20% (₹160 Cr)
+            #     - General Corporate Purposes: 15% (₹120 Cr)
                 
-                USE OF IPO PROCEEDS:
-                Total Issue Size: ₹800 Crores
-                - Capacity Expansion & Capex: 40% (₹320 Cr)
-                - Working Capital Requirements: 25% (₹200 Cr)  
-                - Debt Repayment: 20% (₹160 Cr)
-                - General Corporate Purposes: 15% (₹120 Cr)
+            #     KEY RISK FACTORS:
+            #     - Intense market competition and pricing pressure
+            #     - Regulatory changes in the {sector.lower()} sector
+            #     - Economic slowdown affecting demand
+            #     - Raw material price volatility
+            #     - Technology disruption risks
                 
-                KEY RISK FACTORS:
-                - Intense market competition and pricing pressure
-                - Regulatory changes in the {sector.lower()} sector
-                - Economic slowdown affecting demand
-                - Raw material price volatility
-                - Technology disruption risks
+            #     MANAGEMENT ASSESSMENT:
+            #     - Strong promoter background with {20 if sector == 'Technology' else 25} years experience
+            #     - Professional management team with relevant expertise
+            #     - Good corporate governance practices
+            #     - Track record of consistent performance
                 
-                MANAGEMENT ASSESSMENT:
-                - Strong promoter background with {20 if sector == 'Technology' else 25} years experience
-                - Professional management team with relevant expertise
-                - Good corporate governance practices
-                - Track record of consistent performance
-                
-                GROWTH STRATEGY:
-                - Market expansion to Tier-2 and Tier-3 cities
-                - New product development and innovation
-                - Strategic partnerships and alliances  
-                - Technology upgrades and digitalization
-                """
+            #     GROWTH STRATEGY:
+            #     - Market expansion to Tier-2 and Tier-3 cities
+            #     - New product development and innovation
+            #     - Strategic partnerships and alliances  
+            #     - Technology upgrades and digitalization
+            #     """
             
             try:
                 comprehensive_analysis = self.financial_analyzer.analyze_comprehensive(
-                    raw_data, company_name, ipo_details.get('sector', '')
+                    raw_data, company_name, ipo_details.get('sector', 'Unknown')
                 )
-                financial_metrics = comprehensive_analysis.get('enhanced_metrics') or comprehensive_analysis.get('traditional_metrics')
+                
+                enhanced_metrics = comprehensive_analysis.get('enhanced_metrics')
+                traditional_metrics = comprehensive_analysis.get('traditional_metrics')
+                
+                if enhanced_metrics:
+                    print("✅ Using enhanced LLM-powered financial metrics")
+                    financial_metrics = enhanced_metrics
+                elif traditional_metrics:
+                    print("⚠️ Using traditional financial metrics (LLM analysis failed or not available)")
+                    financial_metrics = traditional_metrics
+                else:
+                    print("❌ No financial metrics available (both enhanced and traditional failed)")
+                    financial_metrics = None
                 
                 # Store additional analysis results
                 raw_data['llm_analysis'] = comprehensive_analysis.get('llm_analysis', {})
@@ -244,6 +258,8 @@ class IPOReviewAgent:
                 
             except Exception as e:
                 logger.error(f"Enhanced analysis failed: {e}")
+                print(f"❌ Enhanced LLM analysis failed: {e}")
+                print("⚠️ Falling back to traditional financial analysis")
                 # Fallback to traditional analysis
                 financial_metrics = self.financial_analyzer.calculate_financial_metrics(
                     raw_data.get('financial_statements', {})
@@ -252,6 +268,7 @@ class IPOReviewAgent:
                 raw_data['llm_analysis'] = {'error': str(e)}
                 raw_data['analysis_error'] = str(e)
         else:
+            print("⚠️ Enhanced LLM analysis not enabled - using traditional financial analysis")
             financial_metrics = self.financial_analyzer.calculate_financial_metrics(
                 raw_data.get('financial_statements', {})
             )
@@ -263,10 +280,10 @@ class IPOReviewAgent:
         
         # Risk assessment
         company_info = {
-            'sector': ipo_details.get('sector'),
+            'sector': ipo_details.get('sector', 'Unknown'),
             'market_cap': self._estimate_market_cap(ipo_details),
-            'ipo_price_range': ipo_details.get('price_range'),
-            'exchange': ipo_details.get('exchange')
+            'ipo_price_range': ipo_details.get('price_range', (100, 120)),
+            'exchange': ipo_details.get('exchange', 'NSE')
         }
         
         risk_assessment = self.risk_analyzer.assess_risks(
@@ -291,6 +308,22 @@ class IPOReviewAgent:
             listing_gain_prediction, long_term_score, risk_assessment
         )
         
+        # Print summary of financial metrics used
+        if financial_metrics:
+            print("📋 Financial Metrics Summary:")
+            print(f"   Revenue Growth Rate: {'✅ Available' if financial_metrics.revenue_growth_rate is not None else '❌ Not Available'}")
+            print(f"   Profit Margin: {'✅ Available' if financial_metrics.profit_margin is not None else '❌ Not Available'}")
+            print(f"   ROE: {'✅ Available' if hasattr(financial_metrics, 'roe') and financial_metrics.roe is not None else '❌ Not Available'}")
+            print(f"   Current Ratio: {'✅ Available' if hasattr(financial_metrics, 'current_ratio') and financial_metrics.current_ratio is not None else '❌ Not Available'}")
+            print(f"   Debt to Equity: {'✅ Available' if hasattr(financial_metrics, 'debt_to_equity') and financial_metrics.debt_to_equity is not None else '❌ Not Available'}")
+        else:
+            print("❌ No financial metrics available!")
+        
+        print(f"📊 Final Analysis Results:")
+        print(f"   Listing Gain Prediction: {listing_gain_prediction:.1f}%")
+        print(f"   Long-term Score: {long_term_score:.1f}/10")
+        print(f"   Recommendation: {recommendation.value if recommendation else 'None'}")
+        
         # Create analysis report
         report = IPOAnalysisReport(
             company=company,
@@ -313,13 +346,19 @@ class IPOReviewAgent:
     def _predict_listing_gains(self, financial_metrics, news_analysis, risk_assessment) -> float:
         """Predict potential listing gains percentage."""
         base_gain = 10.0  # Base expected gain
+        print(f"📊 Calculating listing gains prediction with base gain: {base_gain}%")
         
         # Adjust based on financial performance
         if financial_metrics.revenue_growth_rate:
+            print(f"✅ Using actual revenue growth rate: {financial_metrics.revenue_growth_rate:.1%}")
             if financial_metrics.revenue_growth_rate > 0.2:
                 base_gain += 15
+                print(f"📈 High growth bonus: +15% (new total: {base_gain}%)")
             elif financial_metrics.revenue_growth_rate < 0:
                 base_gain -= 20
+                print(f"📉 Negative growth penalty: -20% (new total: {base_gain}%)")
+        else:
+            print("⚠️ Revenue growth rate not available - using default base gain only")
         
         # Adjust based on sentiment
         sentiment_multiplier = 1 + (news_analysis.sentiment_score * 0.3)
@@ -336,15 +375,23 @@ class IPOReviewAgent:
     def _calculate_long_term_score(self, financial_metrics, risk_assessment, strengths_weaknesses) -> float:
         """Calculate long-term investment score (0-10)."""
         score = 5.0  # Base score
+        print(f"📊 Calculating long-term score with base score: {score}/10")
         
         # Financial factors
         if financial_metrics.profit_margin and financial_metrics.profit_margin > 0.1:
             score += 1.5
+            print(f"✅ High profit margin bonus: +1.5 (new score: {score:.1f}/10)")
         elif financial_metrics.profit_margin and financial_metrics.profit_margin < 0:
             score -= 2
+            print(f"❌ Negative profit margin penalty: -2.0 (new score: {score:.1f}/10)")
+        elif not financial_metrics.profit_margin:
+            print("⚠️ Profit margin not available - no adjustment made")
         
         if financial_metrics.revenue_growth_rate and financial_metrics.revenue_growth_rate > 0.15:
             score += 1.5
+            print(f"✅ Strong revenue growth bonus: +1.5 (new score: {score:.1f}/10)")
+        elif not financial_metrics.revenue_growth_rate:
+            print("⚠️ Revenue growth rate not available - no growth bonus applied")
         
         # Risk factors
         if risk_assessment.overall_risk.value == "Low":
@@ -496,24 +543,13 @@ def ipo_analysis_tab():
             selected_llm_provider = "openai"
             use_llm_analysis = False
         
-        # Company input
-        st.subheader("🏢 IPO Information")
-        company_name = st.text_input("Company Name", placeholder="e.g., Zomato Limited, Paytm, etc.")
-        
-        # IPO specific details
-        ipo_price_min = st.number_input("IPO Price Range - Minimum (₹)", min_value=0.0, value=100.0, step=1.0)
-        ipo_price_max = st.number_input("IPO Price Range - Maximum (₹)", min_value=0.0, value=120.0, step=1.0)
-        
-        # Industry selection for Indian market
-        indian_sectors = [
-            "Technology", "Financial Services", "Healthcare", "Consumer Goods", 
-            "Automotive", "Telecom", "Energy", "Real Estate", "Manufacturing",
-            "Retail", "Pharmaceuticals", "Textiles", "Food & Beverages", "Other"
-        ]
-        selected_sector = st.selectbox("Sector", indian_sectors)
-        
-        # Optional: Expected listing exchange
-        exchange = st.selectbox("Expected Listing Exchange", ["NSE", "BSE", "Both NSE & BSE"])
+        # Company input - simplified to just company name
+        st.subheader("🏢 Company Information")
+        company_name = st.text_input(
+            "IPO/Company Name", 
+            placeholder="e.g., Zomato Limited, Paytm, Vidya Wires Limited",
+            help="Enter the company name for comprehensive IPO analysis"
+        )
         
         analyze_button = st.button("🔍 Analyze IPO", type="primary", disabled=not company_name)
     
@@ -524,11 +560,9 @@ def ipo_analysis_tab():
                 # Initialize agent with LLM configuration
                 agent = IPOReviewAgent(use_llm=use_llm_analysis, llm_provider=selected_llm_provider)
                 
-                # Create IPO details dictionary
+                # Create IPO details dictionary - simplified for name-only analysis
                 ipo_details = {
-                    'price_range': (ipo_price_min, ipo_price_max),
-                    'sector': selected_sector,
-                    'exchange': exchange
+                    'company_name': company_name
                 }
                 
                 # Perform analysis
@@ -540,6 +574,12 @@ def ipo_analysis_tab():
             except Exception as e:
                 st.error(f"❌ Analysis failed: {str(e)}")
                 logger.error(f"Analysis error: {e}")
+                # Add more detailed error information
+                st.error("**Debug Information:**")
+                st.error(f"- Error type: {type(e).__name__}")
+                st.error(f"- Error message: {str(e)}")
+                import traceback
+                st.error(f"- Full traceback: {traceback.format_exc()}")
     else:
         # Welcome screen
         col1, col2, col3 = st.columns(3)
@@ -905,11 +945,11 @@ def display_analysis_report(report: IPOAnalysisReport):
         llm_financial_metrics = llm_analysis.get('llm_financial_metrics')
         
         # Debug information (can be removed in production)
-        with st.expander("🔧 Debug Information", expanded=False):
-            st.write(f"LLM Financial Metrics type: {type(llm_financial_metrics)}")
-            st.write(f"LLM Analysis components: {list(llm_analysis.keys())}")
-            if hasattr(report, 'raw_data') and 'analysis_error' in report.raw_data:
-                st.error(f"Analysis Error: {report.raw_data['analysis_error']}")
+        # with st.expander("🔧 Debug Information", expanded=False):
+        #     st.write(f"LLM Financial Metrics type: {type(llm_financial_metrics)}")
+        #     st.write(f"LLM Analysis components: {list(llm_analysis.keys())}")
+        #     if hasattr(report, 'raw_data') and 'analysis_error' in report.raw_data:
+        #         st.error(f"Analysis Error: {report.raw_data['analysis_error']}")
         
         if llm_financial_metrics:
             display_llm_financial_metrics(llm_financial_metrics)
@@ -943,43 +983,43 @@ def display_analysis_report(report: IPOAnalysisReport):
         if llm_ipo_specifics:
             display_llm_ipo_specifics(llm_ipo_specifics)
     
-    col1, col2, col3, col4 = st.columns(4)
-    with col1:
-        st.metric("Status", "🔄 IPO Pending")
-    with col2:
-        st.metric("Sector", report.company.sector)
-    with col3:
-        st.metric("Long-term Score", f"{report.long_term_score:.1f}/10")
-    with col4:
-        if report.recommendation:
-            color = {
-                "Strong Buy": "🟢",
-                "Buy": "🔵", 
-                "Hold": "🟡",
-                "Avoid": "🔴",
-                "Strong Sell": "⚫"
-            }.get(report.recommendation.value, "⚪")
-            st.metric("Recommendation", f"{color} {report.recommendation.value}")
+    # col1, col2, col3, col4 = st.columns(4)
+    # with col1:
+    #     st.metric("Status", "🔄 IPO Pending")
+    # with col2:
+    #     st.metric("Sector", report.company.sector)
+    # with col3:
+    #     st.metric("Long-term Score", f"{report.long_term_score:.1f}/10")
+    # with col4:
+    #     if report.recommendation:
+    #         color = {
+    #             "Strong Buy": "🟢",
+    #             "Buy": "🔵", 
+    #             "Hold": "🟡",
+    #             "Avoid": "🔴",
+    #             "Strong Sell": "⚫"
+    #         }.get(report.recommendation.value, "⚪")
+    #         st.metric("Recommendation", f"{color} {report.recommendation.value}")
     
     # IPO specific metrics
-    st.subheader("💰 IPO Details")
-    col1, col2, col3 = st.columns(3)
+    # st.subheader("💰 IPO Details")
+    # col1, col2, col3 = st.columns(3)
     
-    with col1:
-        # Display price range if available in market_data
-        if hasattr(report, 'market_data') and report.market_data.get('ipo_price_range'):
-            price_range = report.market_data['ipo_price_range']
-            st.metric("Price Range", f"₹{price_range[0]:.0f} - ₹{price_range[1]:.0f}")
-        else:
-            st.metric("Price Range", "Not Available")
+    # with col1:
+    #     # Display price range if available in market_data
+    #     if hasattr(report, 'market_data') and report.market_data.get('ipo_price_range'):
+    #         price_range = report.market_data['ipo_price_range']
+    #         st.metric("Price Range", f"₹{price_range[0]:.0f} - ₹{price_range[1]:.0f}")
+    #     else:
+    #         st.metric("Price Range", "Not Available")
     
-    with col2:
-        if report.company.market_cap:
-            market_cap_cr = report.company.market_cap / 10000000  # Convert to crores
-            st.metric("Est. Market Cap", f"₹{market_cap_cr:.0f} Cr")
+    # with col2:
+    #     if report.company.market_cap:
+    #         market_cap_cr = report.company.market_cap / 10000000  # Convert to crores
+    #         st.metric("Est. Market Cap", f"₹{market_cap_cr:.0f} Cr")
     
-    with col3:
-        st.metric("Exchange", "NSE & BSE")
+    # with col3:
+    #     st.metric("Exchange", "NSE & BSE")
     
     # Key metrics row
     st.subheader("📈 Key Financial Metrics")
@@ -987,27 +1027,39 @@ def display_analysis_report(report: IPOAnalysisReport):
     
     with col1:
         if report.financial_metrics.revenue_growth_rate is not None:
+            print(f"✅ Using actual revenue growth rate: {report.financial_metrics.revenue_growth_rate:.1%}")
             st.metric(
                 "Revenue Growth Rate", 
                 f"{report.financial_metrics.revenue_growth_rate:.1%}",
                 delta=f"{'📈' if report.financial_metrics.revenue_growth_rate > 0 else '📉'}"
             )
+        else:
+            print("⚠️ Using default value for revenue growth rate: None/Not Available")
+            st.metric("Revenue Growth Rate", "Not Available")
     
     with col2:
         if report.financial_metrics.profit_margin is not None:
+            print(f"✅ Using actual profit margin: {report.financial_metrics.profit_margin:.1%}")
             st.metric(
                 "Profit Margin", 
                 f"{report.financial_metrics.profit_margin:.1%}",
                 delta=f"{'💰' if report.financial_metrics.profit_margin > 0 else '💸'}"
             )
+        else:
+            print("⚠️ Using default value for profit margin: None/Not Available")
+            st.metric("Profit Margin", "Not Available")
     
     with col3:
         if report.listing_gain_prediction is not None:
+            print(f"✅ Using calculated listing gain prediction: {report.listing_gain_prediction:.1f}%")
             st.metric(
                 "Predicted Listing Gains", 
                 f"{report.listing_gain_prediction:.1f}%",
                 delta=f"{'🚀' if report.listing_gain_prediction > 0 else '📉'}"
             )
+        else:
+            print("⚠️ Using default value for listing gain prediction: None/Not Available")
+            st.metric("Predicted Listing Gains", "Not Available")
     
     # Risk Assessment
     st.subheader("⚠️ Risk Assessment")
@@ -1087,26 +1139,34 @@ def display_llm_financial_metrics(llm_financial_metrics):
         
         with col1:
             if hasattr(llm_financial_metrics, 'trailing_pe_ratio') and llm_financial_metrics.trailing_pe_ratio:
+                print(f"✅ LLM extracted P/E Ratio (Trailing): {llm_financial_metrics.trailing_pe_ratio:.2f}")
                 st.metric("P/E Ratio (Trailing)", f"{llm_financial_metrics.trailing_pe_ratio:.2f}")
             else:
+                print("⚠️ Using default for P/E Ratio (Trailing): N/A - No data extracted by LLM")
                 st.metric("P/E Ratio (Trailing)", "N/A")
         
         with col2:
             if hasattr(llm_financial_metrics, 'price_to_book_ratio') and llm_financial_metrics.price_to_book_ratio:
+                print(f"✅ LLM extracted P/B Ratio: {llm_financial_metrics.price_to_book_ratio:.2f}")
                 st.metric("P/B Ratio", f"{llm_financial_metrics.price_to_book_ratio:.2f}")
             else:
+                print("⚠️ Using default for P/B Ratio: N/A - No data extracted by LLM")
                 st.metric("P/B Ratio", "N/A")
         
         with col3:
             if hasattr(llm_financial_metrics, 'ev_to_ebitda_ratio') and llm_financial_metrics.ev_to_ebitda_ratio:
+                print(f"✅ LLM extracted EV/EBITDA: {llm_financial_metrics.ev_to_ebitda_ratio:.2f}")
                 st.metric("EV/EBITDA", f"{llm_financial_metrics.ev_to_ebitda_ratio:.2f}")
             else:
+                print("⚠️ Using default for EV/EBITDA: N/A - No data extracted by LLM")
                 st.metric("EV/EBITDA", "N/A")
         
         with col4:
             if hasattr(llm_financial_metrics, 'price_to_sales_ratio') and llm_financial_metrics.price_to_sales_ratio:
+                print(f"✅ LLM extracted P/S Ratio: {llm_financial_metrics.price_to_sales_ratio:.2f}")
                 st.metric("P/S Ratio", f"{llm_financial_metrics.price_to_sales_ratio:.2f}")
             else:
+                print("⚠️ Using default for P/S Ratio: N/A - No data extracted by LLM")
                 st.metric("P/S Ratio", "N/A")
         
         st.subheader("Profitability Ratios")
@@ -1114,20 +1174,26 @@ def display_llm_financial_metrics(llm_financial_metrics):
         
         with col1:
             if hasattr(llm_financial_metrics, 'return_on_equity') and llm_financial_metrics.return_on_equity:
+                print(f"✅ LLM extracted Return on Equity: {llm_financial_metrics.return_on_equity:.2%}")
                 st.metric("Return on Equity", f"{llm_financial_metrics.return_on_equity:.2%}")
             else:
+                print("⚠️ Using default for Return on Equity: N/A - No data extracted by LLM")
                 st.metric("Return on Equity", "N/A")
         
         with col2:
             if hasattr(llm_financial_metrics, 'return_on_assets') and llm_financial_metrics.return_on_assets:
+                print(f"✅ LLM extracted Return on Assets: {llm_financial_metrics.return_on_assets:.2%}")
                 st.metric("Return on Assets", f"{llm_financial_metrics.return_on_assets:.2%}")
             else:
+                print("⚠️ Using default for Return on Assets: N/A - No data extracted by LLM")
                 st.metric("Return on Assets", "N/A")
         
         with col3:
             if hasattr(llm_financial_metrics, 'return_on_invested_capital') and llm_financial_metrics.return_on_invested_capital:
+                print(f"✅ LLM extracted ROIC: {llm_financial_metrics.return_on_invested_capital:.2%}")
                 st.metric("ROIC", f"{llm_financial_metrics.return_on_invested_capital:.2%}")
             else:
+                print("⚠️ Using default for ROIC: N/A - No data extracted by LLM")
                 st.metric("ROIC", "N/A")
         
         st.subheader("Liquidity & Leverage")
@@ -1189,8 +1255,9 @@ def display_llm_benchmarking(llm_benchmarking):
                 "leader": "🥇", "challenger": "🥈", "follower": "🥉", 
                 "niche": "🎯", "unknown": "❓"
             }
-            icon = position_colors.get(llm_benchmarking.market_position.lower(), "📍")
-            st.info(f"{icon} **Market Position:** {llm_benchmarking.market_position.title()}")
+            position_str = str(llm_benchmarking.market_position) if llm_benchmarking.market_position else "unknown"
+            icon = position_colors.get(position_str.lower(), "📍")
+            st.info(f"{icon} **Market Position:** {position_str.title()}")
         
         # Competitive Advantages & Disadvantages
         col1, col2 = st.columns(2)
@@ -1294,8 +1361,9 @@ def display_llm_ipo_specifics(llm_ipo_specifics):
                 reputation = underwriter.get('reputation_score')
                 if reputation:
                     reputation_colors = {"high": "🟢", "medium": "🟡", "low": "🔴"}
-                    color = reputation_colors.get(reputation.lower(), "⚪")
-                    st.write(f"**Reputation Score:** {color} {reputation.title()}")
+                    reputation_str = str(reputation) if reputation else "unknown"
+                    color = reputation_colors.get(reputation_str.lower(), "⚪")
+                    st.write(f"**Reputation Score:** {color} {reputation_str.title()}")
                 
                 track_record = underwriter.get('track_record')
                 if track_record:
@@ -1313,14 +1381,16 @@ def display_llm_ipo_specifics(llm_ipo_specifics):
                     sustainability = business_model.get('sustainability')
                     if sustainability:
                         sustain_colors = {"high": "🟢", "medium": "🟡", "low": "🔴"}
-                        color = sustain_colors.get(sustainability.lower(), "⚪")
-                        st.write(f"**Sustainability:** {color} {sustainability.title()}")
+                        sustainability_str = str(sustainability) if sustainability else "unknown"
+                        color = sustain_colors.get(sustainability_str.lower(), "⚪")
+                        st.write(f"**Sustainability:** {color} {sustainability_str.title()}")
                     
                     scalability = business_model.get('scalability')
                     if scalability:
                         scale_colors = {"high": "🟢", "medium": "🟡", "low": "🔴"}
-                        color = scale_colors.get(scalability.lower(), "⚪")
-                        st.write(f"**Scalability:** {color} {scalability.title()}")
+                        scalability_str = str(scalability) if scalability else "unknown"
+                        color = scale_colors.get(scalability_str.lower(), "⚪")
+                        st.write(f"**Scalability:** {color} {scalability_str.title()}")
                 
                 with col2:
                     competitive_moat = business_model.get('competitive_moat')
