@@ -120,109 +120,6 @@ class IPOReviewAgent:
             
             logger.info(f"Prospectus text length: {len(prospectus_text)}")
             
-            # For demo purposes, if no real prospectus text is found, use sample text
-            # if not prospectus_text:
-            #     logger.info("No prospectus text found, creating realistic sample data for LLM demo")
-            #     print("prospectus not found")
-            #     # Create sector-specific financial data
-            #     sector_data = {
-            #         'Technology': {
-            #             'revenue_growth': '35%', 'profit_margin': '15%', 'roe': '22%', 
-            #             'pe_ratio': '28x', 'current_ratio': '2.1', 'debt_equity': '0.2'
-            #         },
-            #         'Healthcare': {
-            #             'revenue_growth': '18%', 'profit_margin': '12%', 'roe': '16%',
-            #             'pe_ratio': '24x', 'current_ratio': '1.8', 'debt_equity': '0.3'
-            #         },
-            #         'Financial Services': {
-            #             'revenue_growth': '15%', 'profit_margin': '20%', 'roe': '14%',
-            #             'pe_ratio': '12x', 'current_ratio': '1.2', 'debt_equity': '3.5'
-            #         },
-            #         'Manufacturing': {
-            #             'revenue_growth': '12%', 'profit_margin': '8%', 'roe': '13%',
-            #             'pe_ratio': '16x', 'current_ratio': '1.5', 'debt_equity': '0.6'
-            #         }
-            #     }
-                
-            #     sector = ipo_details.get('sector', 'Technology')
-            #     financial_data = sector_data.get(sector, sector_data['Technology'])
-                
-            #     raw_data['prospectus_text'] = f"""
-            #     DRAFT RED HERRING PROSPECTUS
-                
-            #     {company_name}
-            #     (A Company incorporated under the Companies Act, 2013)
-                
-            #     COMPANY OVERVIEW:
-            #     {company_name} is a leading company in the {sector} sector with strong market presence and growth potential. The company has demonstrated consistent financial performance and strategic market positioning.
-                
-            #     KEY FINANCIAL METRICS (Restated Financials):
-                
-            #     Revenue Performance:
-            #     - FY 2023: ₹1,250 Crores (Growth: {financial_data['revenue_growth']})
-            #     - FY 2022: ₹1,050 Crores  
-            #     - FY 2021: ₹890 Crores
-            #     - 3-Year CAGR: {financial_data['revenue_growth']}
-                
-            #     Profitability Metrics:
-            #     - Net Profit Margin: {financial_data['profit_margin']}
-            #     - EBITDA Margin: {float(financial_data['profit_margin'].strip('%')) + 5}%
-            #     - Return on Equity (ROE): {financial_data['roe']}
-            #     - Return on Assets (ROA): {float(financial_data['roe'].strip('%')) - 3}%
-            #     - Return on Invested Capital (ROIC): {float(financial_data['roe'].strip('%')) - 1}%
-                
-            #     Valuation Ratios:
-            #     - Price-to-Earnings (P/E) Ratio: {financial_data['pe_ratio']}
-            #     - Price-to-Book (P/B) Ratio: {float(financial_data['pe_ratio'].strip('x')) / 10:.1f}x
-            #     - Enterprise Value/EBITDA: {float(financial_data['pe_ratio'].strip('x')) - 4}x
-            #     - Price-to-Sales Ratio: {float(financial_data['pe_ratio'].strip('x')) / 15:.1f}x
-                
-            #     Financial Health Ratios:
-            #     - Current Ratio: {financial_data['current_ratio']}
-            #     - Quick Ratio: {float(financial_data['current_ratio']) - 0.3:.1f}
-            #     - Debt-to-Equity Ratio: {financial_data['debt_equity']}
-            #     - Interest Coverage Ratio: {15 if sector == 'Technology' else 8}x
-                
-            #     BUSINESS MODEL & COMPETITIVE POSITIONING:
-            #     The company operates with a scalable and sustainable business model in the {sector.lower()} space. Key competitive advantages include:
-            #     - Market leadership with {25 if sector == 'Technology' else 15}% market share
-            #     - Strong brand recognition and customer loyalty
-            #     - Advanced technology platform and R&D capabilities
-            #     - Experienced management team with proven track record
-                
-            #     PEER COMPARISON:
-            #     The company's financial metrics compare favorably to industry peers:
-            #     - Revenue growth above industry average of {float(financial_data['revenue_growth'].strip('%')) - 5}%
-            #     - ROE higher than sector median of {float(financial_data['roe'].strip('%')) - 3}%
-            #     - Debt levels lower than industry average
-                
-            #     USE OF IPO PROCEEDS:
-            #     Total Issue Size: ₹800 Crores
-            #     - Capacity Expansion & Capex: 40% (₹320 Cr)
-            #     - Working Capital Requirements: 25% (₹200 Cr)  
-            #     - Debt Repayment: 20% (₹160 Cr)
-            #     - General Corporate Purposes: 15% (₹120 Cr)
-                
-            #     KEY RISK FACTORS:
-            #     - Intense market competition and pricing pressure
-            #     - Regulatory changes in the {sector.lower()} sector
-            #     - Economic slowdown affecting demand
-            #     - Raw material price volatility
-            #     - Technology disruption risks
-                
-            #     MANAGEMENT ASSESSMENT:
-            #     - Strong promoter background with {20 if sector == 'Technology' else 25} years experience
-            #     - Professional management team with relevant expertise
-            #     - Good corporate governance practices
-            #     - Track record of consistent performance
-                
-            #     GROWTH STRATEGY:
-            #     - Market expansion to Tier-2 and Tier-3 cities
-            #     - New product development and innovation
-            #     - Strategic partnerships and alliances  
-            #     - Technology upgrades and digitalization
-            #     """
-            
             try:
                 comprehensive_analysis = self.financial_analyzer.analyze_comprehensive(
                     raw_data, company_name, ipo_details.get('sector', 'Unknown')
@@ -455,8 +352,8 @@ def main():
     )
     
     st.title("🚀 Indian IPO Review Agent")
-    st.markdown("### 🇮🇳 Comprehensive IPO Analysis for Indian Stock Market")
-    st.markdown("🎯 **Specialized for Pre-IPO Analysis using SEBI Draft Offer Documents**")
+    st.markdown("### 🇮🇳 Comprehensive Pre-IPO Analysis for Indian Stock Market")
+    # st.markdown("🎯 **Specialized for Pre-IPO Analysis using SEBI Draft Offer Documents**")
     
     # Create main navigation tabs
     tab1, tab2, tab3 = st.tabs(["🔍 IPO Analysis", "📄 SEBI Document Search", "ℹ️ About"])
@@ -625,7 +522,7 @@ def ipo_analysis_tab():
         - 📰 India-focused market sentiment and news analysis
         - ₹ INR-based pricing and market cap calculations
         
-        **How to use:** Enter the company name, IPO price range, and sector to get comprehensive investment insights!
+        **How to use:** Enter the company name to get comprehensive investment insights!
         """)
     
 def about_tab():
@@ -1022,109 +919,109 @@ def display_analysis_report(report: IPOAnalysisReport):
     #     st.metric("Exchange", "NSE & BSE")
     
     # Key metrics row
-    st.subheader("📈 Key Financial Metrics")
-    col1, col2, col3 = st.columns(3)
+    # st.subheader("📈 Key Financial Metrics")
+    # col1, col2, col3 = st.columns(3)
     
-    with col1:
-        if report.financial_metrics.revenue_growth_rate is not None:
-            print(f"✅ Using actual revenue growth rate: {report.financial_metrics.revenue_growth_rate:.1%}")
-            st.metric(
-                "Revenue Growth Rate", 
-                f"{report.financial_metrics.revenue_growth_rate:.1%}",
-                delta=f"{'📈' if report.financial_metrics.revenue_growth_rate > 0 else '📉'}"
-            )
-        else:
-            print("⚠️ Using default value for revenue growth rate: None/Not Available")
-            st.metric("Revenue Growth Rate", "Not Available")
+    # with col1:
+    #     if report.financial_metrics.revenue_growth_rate is not None:
+    #         print(f"✅ Using actual revenue growth rate: {report.financial_metrics.revenue_growth_rate:.1%}")
+    #         st.metric(
+    #             "Revenue Growth Rate", 
+    #             f"{report.financial_metrics.revenue_growth_rate:.1%}",
+    #             delta=f"{'📈' if report.financial_metrics.revenue_growth_rate > 0 else '📉'}"
+    #         )
+    #     else:
+    #         print("⚠️ Using default value for revenue growth rate: None/Not Available")
+    #         st.metric("Revenue Growth Rate", "Not Available")
     
-    with col2:
-        if report.financial_metrics.profit_margin is not None:
-            print(f"✅ Using actual profit margin: {report.financial_metrics.profit_margin:.1%}")
-            st.metric(
-                "Profit Margin", 
-                f"{report.financial_metrics.profit_margin:.1%}",
-                delta=f"{'💰' if report.financial_metrics.profit_margin > 0 else '💸'}"
-            )
-        else:
-            print("⚠️ Using default value for profit margin: None/Not Available")
-            st.metric("Profit Margin", "Not Available")
+    # with col2:
+    #     if report.financial_metrics.profit_margin is not None:
+    #         print(f"✅ Using actual profit margin: {report.financial_metrics.profit_margin:.1%}")
+    #         st.metric(
+    #             "Profit Margin", 
+    #             f"{report.financial_metrics.profit_margin:.1%}",
+    #             delta=f"{'💰' if report.financial_metrics.profit_margin > 0 else '💸'}"
+    #         )
+    #     else:
+    #         print("⚠️ Using default value for profit margin: None/Not Available")
+    #         st.metric("Profit Margin", "Not Available")
     
-    with col3:
-        if report.listing_gain_prediction is not None:
-            print(f"✅ Using calculated listing gain prediction: {report.listing_gain_prediction:.1f}%")
-            st.metric(
-                "Predicted Listing Gains", 
-                f"{report.listing_gain_prediction:.1f}%",
-                delta=f"{'🚀' if report.listing_gain_prediction > 0 else '📉'}"
-            )
-        else:
-            print("⚠️ Using default value for listing gain prediction: None/Not Available")
-            st.metric("Predicted Listing Gains", "Not Available")
+    # with col3:
+    #     if report.listing_gain_prediction is not None:
+    #         print(f"✅ Using calculated listing gain prediction: {report.listing_gain_prediction:.1f}%")
+    #         st.metric(
+    #             "Predicted Listing Gains", 
+    #             f"{report.listing_gain_prediction:.1f}%",
+    #             delta=f"{'🚀' if report.listing_gain_prediction > 0 else '📉'}"
+    #         )
+    #     else:
+    #         print("⚠️ Using default value for listing gain prediction: None/Not Available")
+    #         st.metric("Predicted Listing Gains", "Not Available")
     
-    # Risk Assessment
-    st.subheader("⚠️ Risk Assessment")
-    risk_colors = {
-        "Low": "🟢", "Moderate": "🟡", "High": "🔴", "Very High": "⚫"
-    }
+    # # Risk Assessment
+    # st.subheader("⚠️ Risk Assessment")
+    # risk_colors = {
+    #     "Low": "🟢", "Moderate": "🟡", "High": "🔴", "Very High": "⚫"
+    # }
     
-    col1, col2, col3, col4 = st.columns(4)
-    with col1:
-        st.write(f"**Overall Risk:** {risk_colors.get(report.risk_assessment.overall_risk.value, '⚪')} {report.risk_assessment.overall_risk.value}")
-    with col2:
-        st.write(f"**Financial Risk:** {risk_colors.get(report.risk_assessment.financial_risk.value, '⚪')} {report.risk_assessment.financial_risk.value}")
-    with col3:
-        st.write(f"**Market Risk:** {risk_colors.get(report.risk_assessment.market_risk.value, '⚪')} {report.risk_assessment.market_risk.value}")
-    with col4:
-        st.write(f"**Operational Risk:** {risk_colors.get(report.risk_assessment.operational_risk.value, '⚪')} {report.risk_assessment.operational_risk.value}")
+    # col1, col2, col3, col4 = st.columns(4)
+    # with col1:
+    #     st.write(f"**Overall Risk:** {risk_colors.get(report.risk_assessment.overall_risk.value, '⚪')} {report.risk_assessment.overall_risk.value}")
+    # with col2:
+    #     st.write(f"**Financial Risk:** {risk_colors.get(report.risk_assessment.financial_risk.value, '⚪')} {report.risk_assessment.financial_risk.value}")
+    # with col3:
+    #     st.write(f"**Market Risk:** {risk_colors.get(report.risk_assessment.market_risk.value, '⚪')} {report.risk_assessment.market_risk.value}")
+    # with col4:
+    #     st.write(f"**Operational Risk:** {risk_colors.get(report.risk_assessment.operational_risk.value, '⚪')} {report.risk_assessment.operational_risk.value}")
     
-    # Risk Factors
-    if report.risk_assessment.risk_factors:
-        with st.expander("🔍 Risk Factors"):
-            for factor in report.risk_assessment.risk_factors:
-                st.write(f"• {factor}")
+    # # Risk Factors
+    # if report.risk_assessment.risk_factors:
+    #     with st.expander("🔍 Risk Factors"):
+    #         for factor in report.risk_assessment.risk_factors:
+    #             st.write(f"• {factor}")
     
-    # Strengths and Weaknesses
-    col1, col2 = st.columns(2)
+    # # Strengths and Weaknesses
+    # col1, col2 = st.columns(2)
     
-    with col1:
-        st.subheader("💪 Strengths")
-        if report.strengths_weaknesses.strengths:
-            for strength in report.strengths_weaknesses.strengths:
-                st.write(f"✅ {strength}")
-        else:
-            st.write("No specific strengths identified")
+    # with col1:
+    #     st.subheader("💪 Strengths")
+    #     if report.strengths_weaknesses.strengths:
+    #         for strength in report.strengths_weaknesses.strengths:
+    #             st.write(f"✅ {strength}")
+    #     else:
+    #         st.write("No specific strengths identified")
     
-    with col2:
-        st.subheader("⚠️ Weaknesses")
-        if report.strengths_weaknesses.weaknesses:
-            for weakness in report.strengths_weaknesses.weaknesses:
-                st.write(f"❌ {weakness}")
-        else:
-            st.write("No major weaknesses identified")
+    # with col2:
+    #     st.subheader("⚠️ Weaknesses")
+    #     if report.strengths_weaknesses.weaknesses:
+    #         for weakness in report.strengths_weaknesses.weaknesses:
+    #             st.write(f"❌ {weakness}")
+    #     else:
+    #         st.write("No major weaknesses identified")
     
-    # News Sentiment
-    st.subheader("📰 Market Sentiment Analysis")
-    col1, col2 = st.columns(2)
+    # # News Sentiment
+    # st.subheader("📰 Market Sentiment Analysis")
+    # col1, col2 = st.columns(2)
     
-    with col1:
-        sentiment_score = report.news_analysis.sentiment_score
-        if sentiment_score > 0.1:
-            st.success(f"Positive Sentiment: {sentiment_score:.2f}")
-        elif sentiment_score < -0.1:
-            st.error(f"Negative Sentiment: {sentiment_score:.2f}")
-        else:
-            st.warning(f"Neutral Sentiment: {sentiment_score:.2f}")
+    # with col1:
+    #     sentiment_score = report.news_analysis.sentiment_score
+    #     if sentiment_score > 0.1:
+    #         st.success(f"Positive Sentiment: {sentiment_score:.2f}")
+    #     elif sentiment_score < -0.1:
+    #         st.error(f"Negative Sentiment: {sentiment_score:.2f}")
+    #     else:
+    #         st.warning(f"Neutral Sentiment: {sentiment_score:.2f}")
     
-    with col2:
-        if report.news_analysis.key_themes:
-            st.write("**Key Themes:**")
-            for theme in report.news_analysis.key_themes[:5]:
-                st.write(f"• {theme.title()}")
+    # with col2:
+    #     if report.news_analysis.key_themes:
+    #         st.write("**Key Themes:**")
+    #         for theme in report.news_analysis.key_themes[:5]:
+    #             st.write(f"• {theme.title()}")
     
-    # Company Description
-    if report.company.description:
-        with st.expander("🏢 Company Description"):
-            st.write(report.company.description)
+    # # Company Description
+    # if report.company.description:
+    #     with st.expander("🏢 Company Description"):
+    #         st.write(report.company.description)
     
     # Analysis timestamp
     st.caption(f"Analysis performed on: {report.analysis_date.strftime('%Y-%m-%d %H:%M:%S')}")
@@ -1134,40 +1031,40 @@ def display_llm_financial_metrics(llm_financial_metrics):
     """Display advanced financial metrics extracted by LLM."""
     
     with st.expander("📈 Advanced Financial Ratios (LLM Extracted)", expanded=False):
-        st.subheader("Valuation Ratios")
-        col1, col2, col3, col4 = st.columns(4)
+        # st.subheader("Valuation Ratios")
+        # col1, col2, col3, col4 = st.columns(4)
         
-        with col1:
-            if hasattr(llm_financial_metrics, 'trailing_pe_ratio') and llm_financial_metrics.trailing_pe_ratio:
-                print(f"✅ LLM extracted P/E Ratio (Trailing): {llm_financial_metrics.trailing_pe_ratio:.2f}")
-                st.metric("P/E Ratio (Trailing)", f"{llm_financial_metrics.trailing_pe_ratio:.2f}")
-            else:
-                print("⚠️ Using default for P/E Ratio (Trailing): N/A - No data extracted by LLM")
-                st.metric("P/E Ratio (Trailing)", "N/A")
+        # with col1:
+        #     if hasattr(llm_financial_metrics, 'trailing_pe_ratio') and llm_financial_metrics.trailing_pe_ratio:
+        #         print(f"✅ LLM extracted P/E Ratio (Trailing): {llm_financial_metrics.trailing_pe_ratio:.2f}")
+        #         st.metric("P/E Ratio (Trailing)", f"{llm_financial_metrics.trailing_pe_ratio:.2f}")
+        #     else:
+        #         print("⚠️ Using default for P/E Ratio (Trailing): N/A - No data extracted by LLM")
+        #         st.metric("P/E Ratio (Trailing)", "N/A")
         
-        with col2:
-            if hasattr(llm_financial_metrics, 'price_to_book_ratio') and llm_financial_metrics.price_to_book_ratio:
-                print(f"✅ LLM extracted P/B Ratio: {llm_financial_metrics.price_to_book_ratio:.2f}")
-                st.metric("P/B Ratio", f"{llm_financial_metrics.price_to_book_ratio:.2f}")
-            else:
-                print("⚠️ Using default for P/B Ratio: N/A - No data extracted by LLM")
-                st.metric("P/B Ratio", "N/A")
+        # with col2:
+        #     if hasattr(llm_financial_metrics, 'price_to_book_ratio') and llm_financial_metrics.price_to_book_ratio:
+        #         print(f"✅ LLM extracted P/B Ratio: {llm_financial_metrics.price_to_book_ratio:.2f}")
+        #         st.metric("P/B Ratio", f"{llm_financial_metrics.price_to_book_ratio:.2f}")
+        #     else:
+        #         print("⚠️ Using default for P/B Ratio: N/A - No data extracted by LLM")
+        #         st.metric("P/B Ratio", "N/A")
         
-        with col3:
-            if hasattr(llm_financial_metrics, 'ev_to_ebitda_ratio') and llm_financial_metrics.ev_to_ebitda_ratio:
-                print(f"✅ LLM extracted EV/EBITDA: {llm_financial_metrics.ev_to_ebitda_ratio:.2f}")
-                st.metric("EV/EBITDA", f"{llm_financial_metrics.ev_to_ebitda_ratio:.2f}")
-            else:
-                print("⚠️ Using default for EV/EBITDA: N/A - No data extracted by LLM")
-                st.metric("EV/EBITDA", "N/A")
+        # with col3:
+        #     if hasattr(llm_financial_metrics, 'ev_to_ebitda_ratio') and llm_financial_metrics.ev_to_ebitda_ratio:
+        #         print(f"✅ LLM extracted EV/EBITDA: {llm_financial_metrics.ev_to_ebitda_ratio:.2f}")
+        #         st.metric("EV/EBITDA", f"{llm_financial_metrics.ev_to_ebitda_ratio:.2f}")
+        #     else:
+        #         print("⚠️ Using default for EV/EBITDA: N/A - No data extracted by LLM")
+        #         st.metric("EV/EBITDA", "N/A")
         
-        with col4:
-            if hasattr(llm_financial_metrics, 'price_to_sales_ratio') and llm_financial_metrics.price_to_sales_ratio:
-                print(f"✅ LLM extracted P/S Ratio: {llm_financial_metrics.price_to_sales_ratio:.2f}")
-                st.metric("P/S Ratio", f"{llm_financial_metrics.price_to_sales_ratio:.2f}")
-            else:
-                print("⚠️ Using default for P/S Ratio: N/A - No data extracted by LLM")
-                st.metric("P/S Ratio", "N/A")
+        # with col4:
+        #     if hasattr(llm_financial_metrics, 'price_to_sales_ratio') and llm_financial_metrics.price_to_sales_ratio:
+        #         print(f"✅ LLM extracted P/S Ratio: {llm_financial_metrics.price_to_sales_ratio:.2f}")
+        #         st.metric("P/S Ratio", f"{llm_financial_metrics.price_to_sales_ratio:.2f}")
+        #     else:
+        #         print("⚠️ Using default for P/S Ratio: N/A - No data extracted by LLM")
+        #         st.metric("P/S Ratio", "N/A")
         
         st.subheader("Profitability Ratios")
         col1, col2, col3 = st.columns(3)
