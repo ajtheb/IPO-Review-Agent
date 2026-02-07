@@ -1,3 +1,9 @@
 ipo_vector_db/
 .vscode/
 .venv/
+.env.example
+__pycache__/
+.ipynb_checkpoints/
+.DS_Store
+logs/
+.env

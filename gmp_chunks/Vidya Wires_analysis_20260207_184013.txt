@@ -1,0 +1,64 @@
+GMP Analysis for Vidya Wires
+Generated: 2026-02-07T18:40:13.860094
+================================================================================
+
+STRUCTURED DATA:
+  GMP Price: ₹None
+  GMP %: None%
+  Issue Price: ₹None
+  Expected Listing: ₹None
+  IPO Status: None
+
+================================================================================
+
+COMPREHENSIVE ANALYSIS:
+**Vidya Wires IPO GMP Analysis**
+
+Unfortunately, the provided context does not contain sufficient GMP data for Vidya Wires. However, I can provide a general framework for GMP analysis and offer insights based on the available information for other IPOs mentioned in the context.
+
+**Current GMP Status (Based on Aye Finance IPO)**
+
+- Current GMP price: ₹1
+- Issue price band: ₹122 to ₹129 per share
+- Expected listing price: Not available
+- GMP is negative, indicating a potential listing price lower than the issue price.
+
+**Market Sentiment Analysis (Based on Aye Finance IPO)**
+
+- The low GMP indicates weak market demand for the IPO.
+- The IPO might be undersubscribed, reflecting low investor confidence.
+- Investor confidence level is low, suggesting a cautious approach.
+
+**Listing Gain Potential (Based on Aye Finance IPO)**
+
+- Expected listing gains: Negative, indicating potential losses.
+- Risk-reward assessment: High risk, low reward.
+- Comparison with similar IPOs: Not available.
+
+**IPO Timeline & Status (Based on Aye Finance IPO)**
+
+- Current IPO status: Upcoming (opens on February 9, 2026).
+- Important dates: Opening (February 9, 2026), closing (February 11, 2026), listing (February 16, 2026).
+- Time-sensitive insights: Investors should carefully evaluate the IPO before applying.
+
+**Investment Recommendation (Based on Aye Finance IPO)**
+
+- Investors should exercise caution when applying for this IPO.
+- Grey market trends: Falling, indicating decreasing demand.
+- Risk factors: Low investor confidence, potential undersubscription, and negative listing gains.
+
+**Key Takeaways**
+
+* Insufficient GMP data for Vidya Wires IPO.
+* Aye Finance IPO GMP is ₹1, indicating weak market demand.
+* Investors should carefully evaluate the IPO before applying.
+* Grey market trends and investor confidence level are crucial factors in investment decisions.
+* It is essential to consider the risk-reward assessment and compare with similar IPOs before making an investment decision.
+
+Please note that the analysis is based on the available information for Aye Finance IPO, as there is no GMP data provided for Vidya Wires. Investors should consult with financial advisors and conduct their own research before making investment decisions.
+
+================================================================================
+Sources: 3 websites scraped
+  1. https://ipowatch.in/aye-finance-ipo-gmp-grey-market-premium/
+  2. https://ipowatch.in/grover-jewells-ipo-gmp-grey-market-premium/
+  3. https://ipowatch.in/fractal-analytics-ipo-gmp-grey-market-premium/

@@ -1,0 +1,18 @@
+Company: Fractal Analytics
+Source: Brave Search API
+Timestamp: 20260203_123408
+Results Count: 2
+================================================================================
+
+Result 1:
+  Title: Live IPO GMP updates | Grey Market Premium Pan India report
+  URL: https://chanakyanipothi.com/ipo-gmp/
+  Description: Live IPO GMP Real time updates ★ Pan-India report on Grey Market Premium with Chanakya’s expert insights on GMP trend
+  Age: 1 day ago
+
+Result 2:
+  Title: Brandman Retail IPO GMP, Grey Market Premium Today - IPO Watch
+  URL: https://ipowatch.in/brandman-retail-ipo-gmp-grey-market-premium/
+  Description: He provides complete coverage of upcoming IPOs, subscription trends, grey market premiums (GMP), and post-listing performance, along with easy-to-understand reviews, insights, and analysis.
+  Age: 1 day ago
+

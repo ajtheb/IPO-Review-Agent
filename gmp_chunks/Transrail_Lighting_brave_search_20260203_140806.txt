@@ -1,0 +1,30 @@
+Company: Transrail Lighting
+Source: Brave Search API
+Timestamp: 20260203_140806
+Results Count: 4
+================================================================================
+
+Result 1:
+  Title: Live IPO GMP updates | Grey Market Premium Pan India report
+  URL: https://chanakyanipothi.com/ipo-gmp/
+  Description: Live IPO GMP Real time updates ★ Pan-India report on Grey Market Premium with Chanakya’s expert insights on GMP trend
+  Age: 1 day ago
+
+Result 2:
+  Title: Transrail Lighting Surges 32% in Q3 Revenue, Margins See Pressure
+  URL: https://www.whalesbook.com/news/English/industrial-goodsservices/Transrail-Lighting-Surges-32percent-in-Q3-Revenue-Margins-See-Pressure/6980cb07c680f8b0a9f5e8d8
+  Description: Transrail Lighting posted robust Q3 FY26 results with <strong>standalone revenue up 32.56% to ₹1,776.68 crore and consolidated PAT rising 17.70% to ₹109.74 crore</strong>. Nine-month figures also show strong YoY growth.
+  Age: 16 hours ago
+
+Result 3:
+  Title: Brandman Retail IPO GMP, Grey Market Premium Today - IPO Watch
+  URL: https://ipowatch.in/brandman-retail-ipo-gmp-grey-market-premium/
+  Description: Founder of IPOWatch, brings nearly 15 years of experience in IPO analysis and market research. He provides complete coverage of upcoming IPOs, subscription trends, grey market premiums (GMP), and post-listing performance, along with easy-to-understand reviews, insights, and analysis.
+  Age: 1 day ago
+
+Result 4:
+  Title: Msafe Equipments IPO booked 166x; check allotment status, GMP, listing date | IPO - Business Standard
+  URL: https://www.business-standard.com/markets/ipo/msafe-equipments-ipo-booked-166x-check-allotment-status-gmp-listing-date-126020200146_1.html
+  Description: Topics : IPOs SME IPOs Markets IPO GMP IPO allotment Share Market Today
+  Age: 1 day ago
+

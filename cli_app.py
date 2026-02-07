@@ -3,6 +3,7 @@ CLI app for IPOReviewAgent
 
 Run:
     python cli_app.py --company "Vidya Wires Limited" --use-llm --llm-provider openai
+    python cli_app.py --company "Fractal Analytics" --gmp-analysis --llm-provider groq
 """
 
 import os
@@ -10,6 +11,12 @@ import sys
 import argparse
 from pathlib import Path
 from loguru import logger
+from datetime import datetime
+import re
+
+# Load environment variables from .env file
+from dotenv import load_dotenv
+load_dotenv()
 
 # Add src to path (same as in Streamlit app)
 sys.path.append(str(Path(__file__).parent / "src"))
@@ -25,6 +32,15 @@ try:
 except ImportError:
     ENHANCED_ANALYZER_AVAILABLE = False
     logger.warning("EnhancedFinancialAnalyzer not available, falling back to basic analyzer")
+
+# Import GMP extractor
+try:
+    from src.data_sources.llm_gmp_extractor import LLMGMPExtractor
+    from groq import Groq
+    GMP_EXTRACTOR_AVAILABLE = True
+except ImportError:
+    GMP_EXTRACTOR_AVAILABLE = False
+    logger.warning("GMP extractor not available")
 
 
 class IPOReviewAgentCLI:
@@ -241,6 +257,219 @@ class IPOReviewAgentCLI:
         report.raw_data = raw_data
         return report
 
+    def analyze_gmp_with_brave_search(self, company_name: str, llm_provider: str = "groq", save_analysis: bool = True):
+        """
+        Analyze GMP data using Brave Search API and Groq LLM.
+        
+        Args:
+            company_name: Name of the company
+            llm_provider: LLM provider to use (default: groq)
+            save_analysis: Whether to save analysis to file
+            
+        Returns:
+            Dictionary with GMP data and comprehensive analysis
+        """
+        if not GMP_EXTRACTOR_AVAILABLE:
+            logger.error("GMP extractor not available")
+            print("❌ GMP extractor not available. Please install required packages:")
+            print("   pip install groq requests beautifulsoup4")
+            return None
+        
+        # Check API keys
+        groq_key = os.getenv('GROQ_API_KEY')
+        brave_key = os.getenv('BRAVE_API_KEY')
+        
+        if not groq_key:
+            logger.error("GROQ_API_KEY not set")
+            print("❌ GROQ_API_KEY not found in .env file")
+            return None
+        
+        if not brave_key:
+            logger.error("BRAVE_API_KEY not set")
+            print("❌ BRAVE_API_KEY not found in .env file")
+            return None
+        
+        print("\n" + "="*80)
+        print(f"🔍 GMP ANALYSIS FOR: {company_name}")
+        print("="*80)
+        
+        try:
+            # Initialize extractor and Groq client
+            extractor = LLMGMPExtractor(provider=llm_provider, use_brave_search=True)
+            groq_client = Groq(api_key=groq_key)
+            
+            # Search Brave and scrape websites
+            print("\n� Searching Brave API and scraping websites...")
+            search_results = extractor.search_gmp_with_brave(company_name, max_results=5)
+            
+            if not search_results:
+                print("❌ No search results found")
+                return None
+            
+            # Scrape website content
+            scraped_chunks = []
+            
+            for i, result in enumerate(search_results[:3], 1):
+                url = result.get('url')
+                # print(f"   [{i}/3] {url}")  # Optional: comment out for cleaner output
+                
+                html_content = extractor.scrape_url_content(url)
+                if html_content:
+                    text_content = extractor.extract_text_from_html(html_content)
+                    
+                    # Save scraped content
+                    extractor.save_scraped_content(
+                        company_name=company_name,
+                        url=url,
+                        html_content=html_content,
+                        text_content=text_content,
+                        folder="gmp_chunks"
+                    )
+                    
+                    # Add to chunks (limit size)
+                    max_chunk_size = 5000
+                    if len(text_content) > max_chunk_size:
+                        text_content = text_content[:max_chunk_size]
+                    
+                    scraped_chunks.append(f"Source: {url}\n{text_content}")
+                    # print(f"       ✅ Scraped {len(text_content)} characters")  # Optional: comment out
+                else:
+                    pass  # print(f"       ⚠️  Failed to scrape")  # Optional: comment out
+            
+            if not scraped_chunks:
+                print("\n⚠️  No content could be scraped from websites")
+                return None
+            
+            print(f"✅ Found data from {len(scraped_chunks)} sources")
+            
+            # Extract structured GMP data (silently for use in analysis)
+            result = extractor.extract_gmp_from_brave_results(
+                company_name=company_name,
+                search_results=search_results,
+                scrape_websites=False,  # Already scraped
+                save_scraped=False
+            )
+            
+            # Generate comprehensive analysis
+            print("🤖 Generating comprehensive analysis...")
+            
+            analysis = self._generate_gmp_analysis(company_name, scraped_chunks, groq_client)
+            
+            print("\n" + "="*80)
+            print("📝 GMP ANALYSIS REPORT")
+            print("="*80 + "\n")
+            print(analysis)
+            
+            # Save analysis to file if requested
+            if save_analysis:
+                os.makedirs("gmp_chunks", exist_ok=True)
+                safe_name = re.sub(r'[^\w\s-]', '_', company_name)
+                timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+                analysis_file = f"gmp_chunks/{safe_name}_analysis_{timestamp}.txt"
+                
+                with open(analysis_file, 'w', encoding='utf-8') as f:
+                    f.write(f"GMP Analysis for {company_name}\n")
+                    f.write(f"Generated: {datetime.now().isoformat()}\n")
+                    f.write("="*80 + "\n\n")
+                    
+                    f.write("STRUCTURED DATA:\n")
+                    f.write(f"  GMP Price: ₹{result.get('gmp_price', 'N/A')}\n")
+                    f.write(f"  GMP %: {result.get('gmp_percentage', 'N/A')}%\n")
+                    f.write(f"  Issue Price: ₹{result.get('issue_price', 'N/A')}\n")
+                    f.write(f"  Expected Listing: ₹{result.get('expected_listing_price', 'N/A')}\n")
+                    f.write(f"  IPO Status: {result.get('ipo_status', 'N/A')}\n")
+                    f.write("\n" + "="*80 + "\n\n")
+                    
+                    f.write("COMPREHENSIVE ANALYSIS:\n")
+                    f.write(analysis)
+                    f.write("\n\n" + "="*80 + "\n")
+                    f.write(f"Sources: {len(scraped_chunks)} websites scraped\n")
+                    for i, result_item in enumerate(search_results[:3], 1):
+                        f.write(f"  {i}. {result_item['url']}\n")
+                
+                print(f"\n💾 Analysis saved to: {analysis_file}")
+            
+            return {
+                'structured_data': result,
+                'analysis': analysis,
+                'sources': [r['url'] for r in search_results[:3]]
+            }
+            
+        except Exception as e:
+            logger.error(f"Error during GMP analysis: {e}")
+            print(f"\n❌ Error: {e}")
+            import traceback
+            traceback.print_exc()
+            return None
+    
+    def _generate_gmp_analysis(self, company_name: str, context_chunks: list, groq_client) -> str:
+        """Generate comprehensive GMP analysis using Groq API."""
+        combined_context = "\n\n".join(context_chunks[:5])
+        
+        analysis_prompt = f"""You are a financial analyst specializing in Indian IPO market analysis. Analyze the Grey Market Premium (GMP) data for {company_name} based on the following information:
+
+CONTEXT FROM WEB SOURCES:
+{combined_context}
+
+Please provide a comprehensive GMP analysis covering:
+
+1. **Current GMP Status**
+   - Current GMP price and percentage
+   - Issue price and expected listing price
+   - Whether GMP is positive, negative, or neutral
+
+2. **Market Sentiment Analysis**
+   - What does the GMP indicate about market demand?
+   - Is the IPO oversubscribed or undersubscribed?
+   - Investor confidence level
+
+3. **Listing Gain Potential**
+   - Expected listing gains based on GMP
+   - Risk-reward assessment
+   - Comparison with similar IPOs if mentioned
+
+4. **IPO Timeline & Status**
+   - Current IPO status (Open/Upcoming/Closed/Listed)
+   - Important dates (opening, closing, listing)
+   - Time-sensitive insights
+
+5. **Investment Recommendation**
+   - Should investors apply for this IPO?
+   - Grey market trends (rising/falling)
+   - Risk factors to consider
+
+6. **Key Takeaways**
+   - 3-5 bullet points summarizing the analysis
+   - Action items for potential investors
+
+Format the response in clear, professional language suitable for investment decision-making. Use ₹ symbol for prices and % for percentages. Be specific with numbers where available.
+
+If the context doesn't contain sufficient GMP data, clearly state what information is missing."""
+
+        try:
+            response = groq_client.chat.completions.create(
+                model="llama-3.3-70b-versatile",
+                messages=[
+                    {
+                        "role": "system",
+                        "content": "You are an expert financial analyst specializing in Indian IPO markets and grey market premium analysis."
+                    },
+                    {
+                        "role": "user",
+                        "content": analysis_prompt
+                    }
+                ],
+                temperature=0.3,
+                max_tokens=2000
+            )
+            
+            return response.choices[0].message.content
+        
+        except Exception as e:
+            return f"Error generating analysis: {e}"
+
+    # ...existing code...
+
 
 def parse_args():
     parser = argparse.ArgumentParser(description="CLI IPO Review Agent")
@@ -279,6 +508,16 @@ def parse_args():
         choices=["openai", "anthropic", "groq", "gemini"],
         help="LLM provider to use for enhanced analysis",
     )
+    parser.add_argument(
+        "--gmp-analysis",
+        action="store_true",
+        help="Run GMP analysis using Brave Search and Groq LLM (requires GROQ_API_KEY and BRAVE_API_KEY)",
+    )
+    parser.add_argument(
+        "--gmp-only",
+        action="store_true",
+        help="Run only GMP analysis without full IPO analysis",
+    )
     return parser.parse_args()
 
 
@@ -311,16 +550,65 @@ def build_ipo_details(args) -> dict:
 
 def main():
     args = parse_args()
-    ipo_details = build_ipo_details(args)
-
+    
     print("=== IPO Review Agent (CLI) ===")
     print(f"Company: {args.company}")
+    
+    # If GMP-only mode, just run GMP analysis and exit
+    if args.gmp_only:
+        print(f"Mode: GMP Analysis Only")
+        print(f"LLM Provider: {args.llm_provider}\n")
+        
+        agent = IPOReviewAgentCLI(use_llm=False, llm_provider=args.llm_provider)
+        gmp_result = agent.analyze_gmp_with_brave_search(args.company, args.llm_provider, save_analysis=True)
+        
+        if gmp_result:
+            print("\n" + "="*80)
+            print("✅ GMP ANALYSIS COMPLETE")
+            print("="*80)
+            print(f"\n📁 Check gmp_chunks/ folder for:")
+            print(f"   - Brave search results")
+            print(f"   - Scraped website content (HTML & text)")
+            print(f"   - Comprehensive analysis report")
+        else:
+            print("\n❌ GMP analysis failed")
+        
+        return
+    
+    # Standard IPO analysis mode
+    ipo_details = build_ipo_details(args)
+    
     print(f"Sector: {args.sector}")
     print(f"Exchange: {args.exchange}")
     print(f"Price Range: {ipo_details['price_range'][0]} - {ipo_details['price_range'][1]}")
-    print(f"Use LLM: {args.use_llm} (provider: {args.llm_provider})\n")
+    print(f"Use LLM: {args.use_llm} (provider: {args.llm_provider})")
+    print(f"GMP Analysis: {args.gmp_analysis}\n")
 
     agent = IPOReviewAgentCLI(use_llm=args.use_llm, llm_provider=args.llm_provider)
+    
+    # Run GMP analysis if requested
+    if args.gmp_analysis:
+        print("\n" + "="*80)
+        print("📊 RUNNING GMP ANALYSIS FIRST")
+        print("="*80)
+        gmp_result = agent.analyze_gmp_with_brave_search(args.company, args.llm_provider, save_analysis=True)
+        
+        if gmp_result:
+            print("\n✅ GMP analysis completed successfully")
+            # Add GMP data to ipo_details if available
+            if gmp_result.get('structured_data', {}).get('status') == 'success':
+                gmp_data = gmp_result['structured_data']
+                ipo_details['gmp_price'] = gmp_data.get('gmp_price')
+                ipo_details['gmp_percentage'] = gmp_data.get('gmp_percentage')
+                ipo_details['expected_listing_price'] = gmp_data.get('expected_listing_price')
+        else:
+            print("\n⚠️  GMP analysis failed, continuing with standard analysis")
+        
+        print("\n" + "="*80)
+        print("📊 RUNNING STANDARD IPO ANALYSIS")
+        print("="*80)
+    
+    # Run standard IPO analysis
     report = agent.analyze_ipo(args.company, ipo_details)
 
     # Minimal structured summary
@@ -330,6 +618,14 @@ def main():
     print(f"Listing Gain Prediction: {report.listing_gain_prediction:.1f}%")
     print(f"Long-term Score: {report.long_term_score:.1f}/10")
     print(f"Recommendation: {report.recommendation.value if report.recommendation else 'None'}")
+    
+    # Show GMP data if available
+    if args.gmp_analysis and ipo_details.get('gmp_price'):
+        print("\n=== GMP Data (from Brave Search) ===")
+        print(f"GMP Price: ₹{ipo_details['gmp_price']}")
+        print(f"GMP Percentage: {ipo_details['gmp_percentage']}%")
+        print(f"Expected Listing: ₹{ipo_details['expected_listing_price']}")
+        print(f"\n📁 Detailed GMP analysis saved in gmp_chunks/ folder")
 
 
 if __name__ == "__main__":

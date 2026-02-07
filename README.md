@@ -30,16 +30,58 @@ An intelligent IPO analysis system specifically designed for the **Indian stock 
 
 ## Installation
 
-1. Clone the repository
-2. Install dependencies:
+### Quick Setup (Recommended)
+
+1. **Clone the repository**
    ```bash
-   pip install -r requirements.txt
+   git clone <repository-url>
+   cd "IPO Review Agent"
    ```
-3. Set up environment variables (see `.env.example`)
-4. Run the application:
+
+2. **Run the setup script**
    ```bash
-   streamlit run app.py
+   bash setup_venv.sh
    ```
+   This will:
+   - Create a Python virtual environment (`.venv`)
+   - Install all required dependencies
+   - Set up the development environment
+
+3. **Configure API keys**
+   ```bash
+   cp .env.example .env
+   # Edit .env and add your API keys
+   ```
+
+4. **Run the application**
+   ```bash
+   bash run_app.sh
+   ```
+
+### Manual Setup
+
+If you prefer manual installation:
+
+```bash
+# Create virtual environment
+python3 -m venv .venv
+
+# Activate virtual environment
+source .venv/bin/activate
+
+# Install dependencies
+pip install -r requirements.txt
+
+# Configure API keys
+cp .env.example .env
+# Edit .env with your keys
+
+# Run application
+streamlit run app.py
+```
+
+**📖 For detailed setup instructions, see [VENV_SETUP_GUIDE.md](VENV_SETUP_GUIDE.md)**  
+**⚡ For quick commands, see [VENV_QUICK_REFERENCE.md](VENV_QUICK_REFERENCE.md)**
 
 ## Configuration
 
@@ -48,32 +90,47 @@ Create a `.env` file with your API keys:
 ### Basic Financial Data APIs:
 - `ALPHA_VANTAGE_API_KEY`: For financial data
 - `NEWS_API_KEY`: For news analysis
-- `FINNHUB_API_KEY`: For market data
 
-### LLM APIs (for Enhanced Analysis):
+### Required LLM & Search APIs:
+- `GROQ_API_KEY`: **[REQUIRED]** For fast LLM-based GMP extraction
+- `BRAVE_API_KEY`: **[REQUIRED]** For web search and real-time GMP data
+
+### Optional LLM APIs (for Enhanced Analysis):
 - `OPENAI_API_KEY`: For OpenAI GPT models
 - `ANTHROPIC_API_KEY`: For Anthropic Claude models
-- `GROQ_API_KEY`: For Groq LLM models
 - `GEMINI_API_KEY`: For Google Gemini models
 
-**Note**: You need at least one LLM API key to use the enhanced prospectus analysis features.
+**Note**: The system now uses **Groq** as the primary LLM provider and **Brave Search API** for real-time market data. Both are required for GMP (Grey Market Premium) extraction.
 
 ## Usage
 
-### For Indian IPO Analysis:
+### Using Wrapper Scripts (Recommended)
+
+All scripts automatically use the `.venv` virtual environment:
 
 1. **Web Interface**: 
    ```bash
+   bash run_app.sh
+   ```
+
+2. **Run Tests**:
+   ```bash
+   bash run_test.sh examples/test_brave_search_gmp.py
+   bash run_test.sh examples/test_llm_gmp_extraction.py
+   ```
+
+### Manual Usage (with venv activated)
+
+1. **Web Interface**: 
+   ```bash
+   source .venv/bin/activate
    streamlit run app.py
    ```
-   - Enter company name (no stock symbol needed for IPOs)
-   - Set IPO price range in ₹ (Indian Rupees)
-   - Select appropriate sector
-   - Get comprehensive analysis
 
 2. **CLI Mode**: 
    ```bash
-   python cli.py "Zomato Limited" --sector Technology --price-min 72 --price-max 76
+   source .venv/bin/activate
+   python cli.py "Zomato Limited"
    ```
 
 3. **Python API**:
@@ -88,6 +145,21 @@ Create a `.env` file with your API keys:
    }
    report = agent.analyze_ipo("Company Name", ipo_details)
    ```
+
+### Testing GMP Extraction
+
+Test the Groq + Brave Search integration:
+```bash
+bash run_test.sh examples/test_brave_search_gmp.py
+```
+
+This will:
+- Fetch GMP data using Brave Search API
+- Extract GMP values using Groq LLM
+- Save all chunks and search results to `gmp_chunks/`
+- Display formatted results
+
+**📖 See [BRAVE_SEARCH_INTEGRATION.md](BRAVE_SEARCH_INTEGRATION.md) for GMP system details**
 
 ## Project Structure
 

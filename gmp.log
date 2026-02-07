@@ -1,0 +1,192 @@
+
+================================================================================
+  🧪 GMP FETCHER COMPREHENSIVE TEST SUITE
+================================================================================
+
+📅 Started at: 2026-02-01 23:56:47
+
+
+================================================================================
+  TEST 1: Fetch GMP for Single Company
+================================================================================
+
+
+🔍 Fetching GMP for: Vidya Wires
+------------------------------------------------------------
+❌ Grey Market Premium data not available for Vidya Wires
+⚠️  Status: not_found
+
+🔍 Fetching GMP for: Akums Drugs
+------------------------------------------------------------
+❌ Grey Market Premium data not available for Akums Drugs
+⚠️  Status: not_found
+
+🔍 Fetching GMP for: Quadrant Future Tek
+------------------------------------------------------------
+❌ Grey Market Premium data not available for Quadrant Future Tek
+⚠️  Status: not_found
+
+🔍 Fetching GMP for: DAM Capital Advisors
+------------------------------------------------------------
+❌ Grey Market Premium data not available for DAM Capital Advisors
+⚠️  Status: not_found
+
+✅ Test 1 completed
+
+================================================================================
+  TEST 2: Fetch GMP for Multiple Companies
+================================================================================
+
+📊 Fetching GMP for 3 companies...
+
+⏱️  Completed in 8.24 seconds
+📈 Success rate: 0/3
+
+============================================================
+Company: Vidya Wires
+⚠️  Status: not_found
+
+============================================================
+Company: Akums Drugs
+⚠️  Status: not_found
+
+============================================================
+Company: DAM Capital
+⚠️  Status: not_found
+
+✅ Test 2 completed
+
+================================================================================
+  TEST 3: Cache Functionality
+================================================================================
+
+🔍 First fetch (should hit web sources)...
+⏱️  Time taken: 1.96 seconds
+Status: not_found
+
+🔍 Second fetch (should use cache)...
+⏱️  Time taken: 0.00 seconds
+Status: not_found
+✅ Cache is working - second fetch was significantly faster
+
+🧹 Clearing cache for Vidya Wires...
+🔍 Third fetch (should hit web sources again)...
+⏱️  Time taken: 1.56 seconds
+
+✅ Test 3 completed
+
+================================================================================
+  TEST 4: Fuzzy Matching
+================================================================================
+
+Query: 'Vidya Wires Limited'
+Text:  'Vidya Wires'
+Match: ✅ Yes
+------------------------------------------------------------
+Query: 'Vidya'
+Text:  'Vidya Wires Limited Company'
+Match: ✅ Yes
+------------------------------------------------------------
+Query: 'vidya wires'
+Text:  'VIDYA WIRES LIMITED'
+Match: ✅ Yes
+------------------------------------------------------------
+Query: 'Akums Drugs & Pharmaceuticals'
+Text:  'Akums Drugs'
+Match: ✅ Yes
+------------------------------------------------------------
+
+✅ Test 4 completed
+
+================================================================================
+  TEST 5: Error Handling
+================================================================================
+
+
+🧪 Testing: Empty company name
+Input: ''
+Status: not_found
+Result: ✅ Handled gracefully
+
+🧪 Testing: Non-existent company
+Input: 'XYZ123NonExistentCompany456'
+Status: not_found
+Result: ✅ Handled gracefully
+
+🧪 Testing: Future company
+Input: 'Test Company 2050'
+Status: not_found
+Result: ✅ Handled gracefully
+
+🧪 Testing: Very long company name
+Input: 'AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA...'
+Status: not_found
+Result: ✅ Handled gracefully
+
+✅ Test 5 completed
+
+================================================================================
+  TEST 6: Data Validation
+================================================================================
+
+🔍 Fetching and validating data for Vidya Wires...
+
+📋 Field Validation:
+  company_name: ✅
+  gmp_price: ✅
+  gmp_percentage: ✅
+  issue_price: ✅
+  expected_listing_price: ✅
+  estimated_listing_gain: ✅
+  last_updated: ✅
+  source: ✅
+  status: ✅
+
+⚠️  Data status: not_found - skipping numeric validation
+
+✅ Test 6 completed
+
+================================================================================
+  TEST 7: Convenience Function
+================================================================================
+
+🔍 Testing GMPFetcher with default settings...
+Company: DAM Capital
+
+Status: not_found
+⚠️  GMP data not available for this company
+
+✅ Test 7 completed
+
+================================================================================
+  COMPREHENSIVE GMP FETCHER DEMO
+================================================================================
+
+📊 Fetching GMP data for popular IPOs...
+
+
+================================================================================
+[1/3] Vidya Wires
+================================================================================
+❌ Grey Market Premium data not available for Vidya Wires
+
+================================================================================
+[2/3] Akums Drugs
+================================================================================
+❌ Grey Market Premium data not available for Akums Drugs
+
+================================================================================
+[3/3] DAM Capital Advisors
+================================================================================
+❌ Grey Market Premium data not available for DAM Capital Advisors
+
+================================================================================
+  📊 GMP Fetcher Demo Completed
+================================================================================
+
+================================================================================
+  ✅ ALL TESTS COMPLETED SUCCESSFULLY
+================================================================================
+
+📅 Finished at: 2026-02-01 23:57:56
+

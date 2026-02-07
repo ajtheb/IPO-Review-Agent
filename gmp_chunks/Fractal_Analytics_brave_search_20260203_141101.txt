@@ -1,0 +1,36 @@
+Company: Fractal Analytics
+Source: Brave Search API
+Timestamp: 20260203_141101
+Results Count: 5
+================================================================================
+
+Result 1:
+  Title: Fractal Analytics IPO Date, Review, Price, Allotment Details - IPO Watch
+  URL: https://ipowatch.in/fractal-analytics-ipo-date-review-price-allotment-details/
+  Description: Fractal Analytics IPO listing date is <strong>February 16, 2026</strong>. The IPO is to list on BSE &amp; NSE. Note: The Fractal Analytics IPO price band and date are officially announced. The (Fractal Analytics IPO grey market premium) will be added to the IPO ...
+  Age: 1 hour ago
+
+Result 2:
+  Title: Fractal Analytics IPO GMP, Price, Allotment, Profit Estimate 2026 - IPO Central
+  URL: https://ipocentral.in/fractal-analytics-ipo-gmp-price-date-allotment/
+  Description: Fractal Analytics IPO GMP today is <strong>INR NA per share</strong>. Fractal Analytics Subject to Sauda rate today is INR NA per application. ... Indian capital market has seen a quantum jump in terms of turnover, market participants as well as regulations ...
+  Age: 8 hours ago
+
+Result 3:
+  Title: Live IPO GMP updates | Grey Market Premium Pan India report
+  URL: https://chanakyanipothi.com/ipo-gmp/
+  Description: Live IPO GMP Real time updates ★ Pan-India report on Grey Market Premium with Chanakya’s expert insights on GMP trend
+  Age: 1 day ago
+
+Result 4:
+  Title: India's Fractal Analytics cuts IPO size by over 40% to $314 million | Reuters
+  URL: https://www.reuters.com/world/india/indias-fractal-analytics-cuts-ipo-size-by-over-40-314-million-2026-02-03/
+  Description: The Mumbai-based firm, set to become India&#x27;s first listed pure-play AI company, trimmed the IPO size to <strong>28.34 billion rupees</strong> from 49 billion rupees, according to its prospectus released on Monday.
+  Age: 1 hour ago
+
+Result 5:
+  Title: Brandman Retail IPO GMP, Grey Market Premium Today - IPO Watch
+  URL: https://ipowatch.in/brandman-retail-ipo-gmp-grey-market-premium/
+  Description: He provides complete coverage of upcoming IPOs, subscription trends, grey market premiums (GMP), and post-listing performance, along with easy-to-understand reviews, insights, and analysis.
+  Age: 1 day ago
+

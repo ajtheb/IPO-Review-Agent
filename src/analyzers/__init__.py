@@ -16,27 +16,43 @@ from ..models import (
     StrengthsAndWeaknesses, NewsAnalysis, InvestmentRecommendation
 )
 
-# Import LLM analyzer if available
-try:
-    from .llm_prospectus_analyzer import (
-        LLMProspectusAnalyzer, LLMFinancialMetrics, BenchmarkingAnalysis, 
-        IPOSpecificMetrics, integrate_llm_analysis
-    )
-    LLM_ANALYZER_AVAILABLE = True
-    logger.info("LLM prospectus analyzer loaded successfully")
-except ImportError as e:
-    LLM_ANALYZER_AVAILABLE = False
-    logger.warning(f"LLM analyzer not available: {e}")
+# Lazy import LLM analyzer to avoid circular dependency
+LLM_ANALYZER_AVAILABLE = False
+LLMProspectusAnalyzer = None
+LLMFinancialMetrics = None
+BenchmarkingAnalysis = None
+IPOSpecificMetrics = None
+integrate_llm_analysis = None
+
+def _load_llm_analyzer():
+    """Lazy load LLM analyzer modules to avoid circular imports."""
+    global LLM_ANALYZER_AVAILABLE, LLMProspectusAnalyzer, LLMFinancialMetrics
+    global BenchmarkingAnalysis, IPOSpecificMetrics, integrate_llm_analysis
     
-    # Define placeholder classes for type hints when imports fail
-    class LLMFinancialMetrics:
-        pass
+    if LLM_ANALYZER_AVAILABLE:
+        return True
     
-    class BenchmarkingAnalysis:
-        pass
-    
-    class IPOSpecificMetrics:
-        pass
+    try:
+        from .llm_prospectus_analyzer import (
+            LLMProspectusAnalyzer as _LLMProspectusAnalyzer,
+            LLMFinancialMetrics as _LLMFinancialMetrics,
+            BenchmarkingAnalysis as _BenchmarkingAnalysis,
+            IPOSpecificMetrics as _IPOSpecificMetrics,
+            integrate_llm_analysis as _integrate_llm_analysis
+        )
+        
+        LLMProspectusAnalyzer = _LLMProspectusAnalyzer
+        LLMFinancialMetrics = _LLMFinancialMetrics
+        BenchmarkingAnalysis = _BenchmarkingAnalysis
+        IPOSpecificMetrics = _IPOSpecificMetrics
+        integrate_llm_analysis = _integrate_llm_analysis
+        LLM_ANALYZER_AVAILABLE = True
+        
+        logger.info("LLM prospectus analyzer loaded successfully")
+        return True
+    except ImportError as e:
+        logger.warning(f"LLM analyzer not available: {e}")
+        return False
 
 
 class EnhancedFinancialAnalyzer:
@@ -47,8 +63,8 @@ class EnhancedFinancialAnalyzer:
         self.llm_provider = llm_provider
         self.llm_analyzer = None
         
-        # Initialize LLM analyzer if available
-        if LLM_ANALYZER_AVAILABLE:
+        # Lazy load LLM analyzer
+        if _load_llm_analyzer():
             try:
                 self.llm_analyzer = LLMProspectusAnalyzer(provider=llm_provider)
                 logger.info(f"LLM analyzer initialized with {llm_provider}")
@@ -98,6 +114,11 @@ class EnhancedFinancialAnalyzer:
         
         # LLM-powered analysis if prospectus text is available
         prospectus_text = financial_data.get('prospectus_text', '')
+        
+        # Debug logging
+        logger.info(f"Prospectus text available: {bool(prospectus_text)}, Length: {len(prospectus_text)}")
+        logger.info(f"LLM analyzer available: {bool(self.llm_analyzer)}")
+        
         if prospectus_text and self.llm_analyzer:
             logger.info(f"Performing LLM analysis for {company_name}")
             
@@ -143,15 +164,68 @@ class EnhancedFinancialAnalyzer:
             except Exception as e:
                 logger.error(f"LLM analysis failed: {e}")
                 results['llm_error'] = str(e)
+        elif self.llm_analyzer and not prospectus_text:
+            # Generate a basic investment thesis even without prospectus text
+            logger.warning(f"No prospectus text available for {company_name}, generating basic LLM analysis")
+            try:
+                # Create a simple context from available data
+                basic_context = self._create_basic_context(financial_data, company_name, sector)
+                llm_analysis = integrate_llm_analysis(
+                    company_name, basic_context, sector, self.llm_provider
+                )
+                results['llm_analysis'] = llm_analysis
+                logger.info(f"Generated basic LLM analysis from available data")
+            except Exception as e:
+                logger.error(f"Basic LLM analysis generation failed: {e}")
+                results['llm_error'] = str(e)
+        else:
+            logger.warning(f"LLM analysis skipped - prospectus_text: {bool(prospectus_text)}, llm_analyzer: {bool(self.llm_analyzer)}")
         
         # Quality assessment
         results['analysis_quality'] = self._assess_analysis_quality(results)
         
         return results
     
+    def _create_basic_context(self, financial_data: Dict[str, Any], company_name: str, sector: str) -> str:
+        """Create a basic context string from available data when no prospectus is available."""
+        context_parts = [f"Company: {company_name}", f"Sector: {sector}"]
+        
+        # Add IPO details if available
+        ipo_details = financial_data.get('ipo_details', {})
+        if ipo_details:
+            context_parts.append(f"\nIPO Details:")
+            for key, value in ipo_details.items():
+                context_parts.append(f"  {key}: {value}")
+        
+        # Add any available description
+        if 'description' in financial_data:
+            context_parts.append(f"\nBusiness Description:\n{financial_data['description']}")
+        
+        # Add prospectus summary if available
+        if 'prospectus_summary' in financial_data:
+            summary = financial_data['prospectus_summary']
+            if isinstance(summary, dict):
+                context_parts.append(f"\nProspectus Summary:")
+                for key, value in summary.items():
+                    if isinstance(value, (str, int, float)):
+                        context_parts.append(f"  {key}: {value}")
+            elif isinstance(summary, str):
+                context_parts.append(f"\nProspectus Summary:\n{summary}")
+        
+        # Add news headlines if available
+        company_news = financial_data.get('company_news', [])
+        if company_news:
+            context_parts.append(f"\nRecent News ({len(company_news)} articles):")
+            for article in company_news[:5]:  # Top 5 articles
+                title = article.get('title', '')
+                if title:
+                    context_parts.append(f"  - {title}")
+        
+        return "\n".join(context_parts)
+    
     def _merge_financial_metrics(self, 
                                traditional: FinancialMetrics, 
-                               llm_metrics: LLMFinancialMetrics) -> FinancialMetrics:
+                               llm_metrics: Any) -> FinancialMetrics:  # Using Any to avoid circular import
         """Merge traditional and LLM-extracted financial metrics."""
         
         # Start with traditional metrics
@@ -190,7 +264,7 @@ class EnhancedFinancialAnalyzer:
         return merged
     
     def _perform_valuation_analysis(self, 
-                                  llm_metrics: LLMFinancialMetrics,
+                                  llm_metrics: Any,  # Using Any to avoid circular import
                                   sector: str) -> Dict[str, Any]:
         """Perform advanced valuation analysis using LLM-extracted metrics."""
         
@@ -241,8 +315,8 @@ class EnhancedFinancialAnalyzer:
         return valuation
     
     def _analyze_peer_comparison(self,
-                               benchmarking: BenchmarkingAnalysis,
-                               llm_metrics: LLMFinancialMetrics,
+                               benchmarking: Any,  # Using Any to avoid circular import
+                               llm_metrics: Any,  # Using Any to avoid circular import
                                sector: str) -> Dict[str, Any]:
         """Analyze peer comparison using LLM benchmarking data."""
         
@@ -320,8 +394,8 @@ class EnhancedFinancialAnalyzer:
             return "Significantly Undervalued"
     
     def _calculate_competitive_score(self, 
-                                   benchmarking: BenchmarkingAnalysis, 
-                                   metrics: LLMFinancialMetrics) -> float:
+                                   benchmarking: Any,  # Using Any to avoid circular import
+                                   metrics: Any) -> float:  # Using Any to avoid circular import
         """Calculate overall competitive score (0-10)."""
         score = 5.0  # Base score
         

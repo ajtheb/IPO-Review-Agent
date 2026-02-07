@@ -1,0 +1,45 @@
+GMP Analysis for Fractal Analytics
+Generated: 2026-02-04T00:01:48.766128
+================================================================================
+
+STRUCTURED DATA:
+  GMP Price: ₹None
+  GMP %: None%
+  Issue Price: ₹None
+  Expected Listing: ₹None
+  IPO Status: Listed
+
+================================================================================
+
+COMPREHENSIVE ANALYSIS:
+**Comprehensive GMP Analysis for Fractal Analytics IPO**
+
+### 1. Current GMP Status
+As of the latest update, the Grey Market Premium (GMP) for Fractal Analytics IPO is ₹0, indicating no premium or discount in the grey market. The issue price band is not specified, making it challenging to determine the exact premium or discount percentage. However, with a GMP of ₹0, it suggests that the grey market is neutral about the IPO at this stage.
+
+### 2. Market Sentiment Analysis
+The GMP of ₹0 indicates a neutral market sentiment towards the Fractal Analytics IPO. This could suggest that the market demand is moderate, neither overly enthusiastic nor pessimistic. Without specific subscription numbers, it's difficult to ascertain if the IPO is oversubscribed or undersubscribed. Investor confidence appears to be cautious, awaiting more information or market trends to make a decisive move.
+
+### 3. Listing Gain Potential
+Given the current GMP of ₹0, the expected listing gains are uncertain. Typically, a positive GMP indicates potential for listing gains, but in this case, the neutral stance of the grey market makes it challenging to predict. The risk-reward assessment is also difficult without a clear indication of market demand or expected listing price. Comparison with similar IPOs is not possible due to the lack of specific GMP and issue price details.
+
+### 4. IPO Timeline & Status
+The Fractal Analytics IPO is scheduled to open on February 9, 2026, and close on February 11, 2026. The allotment date is set for February 12, 2026, with the listing expected on February 16, 2026. As of now, the IPO has not started trading in the grey market, indicating that it is in a pre-IPO phase.
+
+### 5. Investment Recommendation
+Investors should exercise caution and consider the company's fundamentals, industry trends, and market conditions before applying for this IPO. The neutral grey market trend suggests that investors are not overly optimistic or pessimistic, which could be due to various factors including the lack of information on the issue price band. It's essential to analyze the company's financials, growth prospects, and the demand for its services in the AI and analytics sector.
+
+### 6. Key Takeaways
+- **Neutral GMP**: The current GMP of ₹0 indicates a neutral market stance, suggesting moderate demand.
+- **Lack of Information**: The absence of specific issue price details and subscription numbers makes it challenging to assess the IPO's potential accurately.
+- **Cautious Approach**: Investors should adopt a cautious approach, considering both the company's fundamentals and market trends before making an investment decision.
+- **Monitor Updates**: Keep an eye on updates regarding the issue price, subscription numbers, and any changes in the GMP to make a more informed decision.
+- **Fundamental Analysis**: Focus on the company's financial health, industry position, and growth prospects to assess its potential for long-term investment.
+
+In conclusion, while the Fractal Analytics IPO presents an opportunity in the growing AI and analytics sector, the current neutral GMP and lack of detailed information necessitate a cautious and informed approach from potential investors.
+
+================================================================================
+Sources: 3 websites scraped
+  1. https://ipowatch.in/fractal-analytics-ipo-gmp-grey-market-premium/
+  2. https://ipowatch.in/fractal-analytics-ipo-date-review-price-allotment-details/
+  3. https://ipowatch.in/fractal-analytics-ipo-allotment-status/

@@ -13,6 +13,10 @@ from loguru import logger
 import requests
 import time
 import re
+from dotenv import load_dotenv
+
+# Load environment variables
+load_dotenv()
 
 # Conditional imports for SEBI functionality
 try:
@@ -40,6 +44,15 @@ try:
     ENHANCED_ANALYZER_AVAILABLE = True
 except ImportError:
     ENHANCED_ANALYZER_AVAILABLE = False
+
+# Import GMP extractor
+try:
+    from src.data_sources.llm_gmp_extractor import LLMGMPExtractor
+    from groq import Groq
+    GMP_EXTRACTOR_AVAILABLE = True
+except ImportError:
+    GMP_EXTRACTOR_AVAILABLE = False
+    logger.warning("GMP extractor not available")
 
 
 class IPOReviewAgent:
@@ -240,6 +253,186 @@ class IPOReviewAgent:
         
         return report
     
+    def analyze_gmp(self, company_name: str) -> dict:
+        """
+        Analyze GMP data using Brave Search and Groq LLM.
+        
+        Args:
+            company_name: Name of the company
+            
+        Returns:
+            Dictionary with GMP analysis results
+        """
+        if not GMP_EXTRACTOR_AVAILABLE:
+            return {
+                'status': 'error',
+                'message': 'GMP extractor not available'
+            }
+        
+        # Check API keys
+        groq_key = os.getenv('GROQ_API_KEY')
+        brave_key = os.getenv('BRAVE_API_KEY')
+        
+        if not groq_key or not brave_key:
+            return {
+                'status': 'error',
+                'message': 'GROQ_API_KEY and BRAVE_API_KEY required'
+            }
+        
+        try:
+            # Initialize extractor
+            extractor = LLMGMPExtractor(provider="groq", use_brave_search=True)
+            groq_client = Groq(api_key=groq_key)
+            
+            # Search and scrape
+            search_results = extractor.search_gmp_with_brave(company_name, max_results=5)
+            
+            if not search_results:
+                return {
+                    'status': 'not_found',
+                    'message': 'No search results found'
+                }
+            
+            # Scrape website content
+            scraped_chunks = []
+            for result in search_results[:3]:
+                url = result.get('url')
+                html_content = extractor.scrape_url_content(url)
+                
+                if html_content:
+                    text_content = extractor.extract_text_from_html(html_content)
+                    
+                    # Save scraped content
+                    extractor.save_scraped_content(
+                        company_name=company_name,
+                        url=url,
+                        html_content=html_content,
+                        text_content=text_content,
+                        folder="gmp_chunks"
+                    )
+                    
+                    # Limit chunk size
+                    max_chunk_size = 5000
+                    if len(text_content) > max_chunk_size:
+                        text_content = text_content[:max_chunk_size]
+                    
+                    scraped_chunks.append(f"Source: {url}\n{text_content}")
+            
+            if not scraped_chunks:
+                return {
+                    'status': 'not_found',
+                    'message': 'No content could be scraped'
+                }
+            
+            # Extract structured GMP data
+            result = extractor.extract_gmp_from_brave_results(
+                company_name=company_name,
+                search_results=search_results,
+                scrape_websites=False,
+                save_scraped=False
+            )
+            
+            # Generate comprehensive analysis
+            combined_context = "\n\n".join(scraped_chunks[:5])
+            analysis_prompt = f"""You are a financial analyst specializing in Indian IPO market analysis. Analyze the Grey Market Premium (GMP) data for {company_name} based on the following information:
+
+CONTEXT FROM WEB SOURCES:
+{combined_context}
+
+Please provide a comprehensive GMP analysis covering:
+
+1. **Current GMP Status**
+   - Current GMP price and percentage
+   - Issue price and expected listing price
+   - Whether GMP is positive, negative, or neutral
+
+2. **Market Sentiment Analysis**
+   - What does the GMP indicate about market demand?
+   - Is the IPO oversubscribed or undersubscribed?
+   - Investor confidence level
+
+3. **Listing Gain Potential**
+   - Expected listing gains based on GMP
+   - Risk-reward assessment
+   - Comparison with similar IPOs if mentioned
+
+4. **IPO Timeline & Status**
+   - Current IPO status (Open/Upcoming/Closed/Listed)
+   - Important dates (opening, closing, listing)
+   - Time-sensitive insights
+
+5. **Investment Recommendation**
+   - Should investors apply for this IPO?
+   - Grey market trends (rising/falling)
+   - Risk factors to consider
+
+6. **Key Takeaways**
+   - 3-5 bullet points summarizing the analysis
+   - Action items for potential investors
+
+Format the response in clear, professional language suitable for investment decision-making. Use ₹ symbol for prices and % for percentages. Be specific with numbers where available.
+
+If the context doesn't contain sufficient GMP data, clearly state what information is missing."""
+
+            response = groq_client.chat.completions.create(
+                model="llama-3.3-70b-versatile",
+                messages=[
+                    {
+                        "role": "system",
+                        "content": "You are an expert financial analyst specializing in Indian IPO markets and grey market premium analysis."
+                    },
+                    {
+                        "role": "user",
+                        "content": analysis_prompt
+                    }
+                ],
+                temperature=0.3,
+                max_tokens=2000
+            )
+            
+            analysis = response.choices[0].message.content
+            
+            # Save analysis to file
+            os.makedirs("gmp_chunks", exist_ok=True)
+            safe_name = re.sub(r'[^\w\s-]', '_', company_name)
+            timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+            analysis_file = f"gmp_chunks/{safe_name}_analysis_{timestamp}.txt"
+            
+            with open(analysis_file, 'w', encoding='utf-8') as f:
+                f.write(f"GMP Analysis for {company_name}\n")
+                f.write(f"Generated: {datetime.now().isoformat()}\n")
+                f.write("="*80 + "\n\n")
+                
+                f.write("STRUCTURED DATA:\n")
+                f.write(f"  GMP Price: ₹{result.get('gmp_price', 'N/A')}\n")
+                f.write(f"  GMP %: {result.get('gmp_percentage', 'N/A')}%\n")
+                f.write(f"  Issue Price: ₹{result.get('issue_price', 'N/A')}\n")
+                f.write(f"  Expected Listing: ₹{result.get('expected_listing_price', 'N/A')}\n")
+                f.write(f"  IPO Status: {result.get('ipo_status', 'N/A')}\n")
+                f.write("\n" + "="*80 + "\n\n")
+                
+                f.write("COMPREHENSIVE ANALYSIS:\n")
+                f.write(analysis)
+                f.write("\n\n" + "="*80 + "\n")
+                f.write(f"Sources: {len(scraped_chunks)} websites scraped\n")
+                for i, result_item in enumerate(search_results[:3], 1):
+                    f.write(f"  {i}. {result_item['url']}\n")
+            
+            return {
+                'status': 'success',
+                'structured_data': result,
+                'analysis': analysis,
+                'sources': [r['url'] for r in search_results[:3]],
+                'file_saved': analysis_file
+            }
+            
+        except Exception as e:
+            logger.error(f"GMP analysis error: {e}")
+            return {
+                'status': 'error',
+                'message': str(e)
+            }
+    
     def _predict_listing_gains(self, financial_metrics, news_analysis, risk_assessment) -> float:
         """Predict potential listing gains percentage."""
         base_gain = 10.0  # Base expected gain
@@ -351,7 +544,7 @@ def main():
         layout="wide"
     )
     
-    st.title("🚀 Indian IPO Review Agent")
+    st.title("🚀 IPO Review Agent")
     st.markdown("### 🇮🇳 Comprehensive Pre-IPO Analysis for Indian Stock Market")
     # st.markdown("🎯 **Specialized for Pre-IPO Analysis using SEBI Draft Offer Documents**")
     
@@ -440,6 +633,29 @@ def ipo_analysis_tab():
             selected_llm_provider = "openai"
             use_llm_analysis = False
         
+        # GMP Analysis Configuration
+        st.subheader("💹 GMP Analysis")
+        
+        # Check for GMP API keys
+        groq_gmp_key = os.getenv('GROQ_API_KEY')
+        brave_gmp_key = os.getenv('BRAVE_API_KEY')
+        
+        if GMP_EXTRACTOR_AVAILABLE and groq_gmp_key and brave_gmp_key:
+            use_gmp_analysis = st.checkbox(
+                "📊 Enable GMP Analysis",
+                value=True,
+                help="Analyze Grey Market Premium using Brave Search and Groq LLM"
+            )
+            st.success("✅ GMP Analysis available (Groq + Brave Search)")
+        else:
+            use_gmp_analysis = False
+            if not GMP_EXTRACTOR_AVAILABLE:
+                st.warning("⚠️ GMP extractor not available")
+            elif not groq_gmp_key:
+                st.warning("⚠️ GROQ_API_KEY not configured")
+            elif not brave_gmp_key:
+                st.warning("⚠️ BRAVE_API_KEY not configured")
+        
         # Company input - simplified to just company name
         st.subheader("🏢 Company Information")
         company_name = st.text_input(
@@ -452,6 +668,27 @@ def ipo_analysis_tab():
     
     # Main content area
     if analyze_button and company_name:
+        # Store GMP analysis result
+        gmp_result = None
+        
+        # Run GMP analysis FIRST if enabled
+        if use_gmp_analysis:
+            with st.spinner(f"🔍 Analyzing GMP for {company_name}..."):
+                try:
+                    agent_temp = IPOReviewAgent(use_llm=False)
+                    gmp_result = agent_temp.analyze_gmp(company_name)
+                    
+                    if gmp_result and gmp_result.get('status') == 'success':
+                        st.success("✅ GMP Analysis completed successfully!")
+                    elif gmp_result and gmp_result.get('status') == 'not_found':
+                        st.warning(f"⚠️ {gmp_result.get('message', 'GMP data not found')}")
+                    elif gmp_result and gmp_result.get('status') == 'error':
+                        st.error(f"❌ GMP Analysis failed: {gmp_result.get('message')}")
+                except Exception as e:
+                    st.error(f"❌ GMP Analysis error: {str(e)}")
+                    logger.error(f"GMP analysis error: {e}")
+                
+        # Run standard IPO analysis
         with st.spinner(f"🔄 Analyzing {company_name}..."):
             try:
                 # Initialize agent with LLM configuration
@@ -465,8 +702,8 @@ def ipo_analysis_tab():
                 # Perform analysis
                 report = agent.analyze_ipo(company_name, ipo_details)
                 
-                # Display results
-                display_analysis_report(report)
+                # Display results WITH GMP data
+                display_analysis_report(report, gmp_result)
                 
             except Exception as e:
                 st.error(f"❌ Analysis failed: {str(e)}")
@@ -477,6 +714,7 @@ def ipo_analysis_tab():
                 st.error(f"- Error message: {str(e)}")
                 import traceback
                 st.error(f"- Full traceback: {traceback.format_exc()}")
+
     else:
         # Welcome screen
         col1, col2, col3 = st.columns(3)
@@ -821,63 +1059,115 @@ def download_sebi_document(filing_url, company_name):
         st.error(f"❌ Download failed: {str(e)}")
 
 
-def display_analysis_report(report: IPOAnalysisReport):
-    """Display the enhanced analysis report with LLM insights."""
+def display_analysis_report(report: IPOAnalysisReport, gmp_result: dict = None):
+    """Display the enhanced analysis report with LLM insights and GMP analysis."""
     
     # Header with company info
     st.header(f"📊 Enhanced Analysis Report: {report.company.name}")
     
     # Check if enhanced LLM analysis is available
+    llm_analysis = None
     if hasattr(report, 'raw_data') and 'llm_analysis' in getattr(report, 'raw_data', {}):
         llm_analysis = report.raw_data['llm_analysis']
         st.success(f"🤖 **Enhanced with LLM-Powered Prospectus Analysis** (Provider: {llm_analysis.get('llm_provider', 'unknown').title()})")
-        
-        # Show LLM Investment Thesis
+    
+    # 1. DISPLAY AI-GENERATED INVESTMENT THESIS FIRST
+    if llm_analysis:
         investment_thesis = llm_analysis.get('llm_investment_thesis', '')
         if investment_thesis:
+            st.markdown("---")
             with st.expander("🎯 AI-Generated Investment Thesis", expanded=True):
                 st.markdown(investment_thesis)
+    
+    # 2. DISPLAY GMP ANALYSIS SECOND
+    if gmp_result and gmp_result.get('status') == 'success':
+        st.markdown("---")
+        st.subheader("💹 Grey Market Premium (GMP) Analysis")
         
-        # Display LLM Financial Metrics
+        # Display structured GMP data
+        structured_data = gmp_result.get('structured_data', {})
+        
+        col1, col2, col3, col4 = st.columns(4)
+        
+        with col1:
+            gmp_price = structured_data.get('gmp_price')
+            if gmp_price:
+                st.metric("GMP Price", f"₹{gmp_price}")
+            else:
+                st.metric("GMP Price", "N/A")
+        
+        with col2:
+            gmp_percentage = structured_data.get('gmp_percentage')
+            if gmp_percentage:
+                st.metric("GMP %", f"{gmp_percentage}%")
+            else:
+                st.metric("GMP %", "N/A")
+        
+        with col3:
+            issue_price = structured_data.get('issue_price')
+            if issue_price:
+                st.metric("Issue Price", f"₹{issue_price}")
+            else:
+                st.metric("Issue Price", "N/A")
+        
+        with col4:
+            expected_listing = structured_data.get('expected_listing_price')
+            if expected_listing:
+                st.metric("Expected Listing", f"₹{expected_listing}")
+            else:
+                st.metric("Expected Listing", "N/A")
+        
+        # Display comprehensive analysis
+        analysis_text = gmp_result.get('analysis', '')
+        if analysis_text:
+            with st.expander("📝 Comprehensive GMP Analysis", expanded=True):
+                st.markdown(analysis_text)
+        
+        # Display sources
+        sources = gmp_result.get('sources', [])
+        if sources:
+            with st.expander("🔗 Data Sources"):
+                for i, source in enumerate(sources, 1):
+                    st.write(f"{i}. {source}")
+        
+        # Show file save location
+        file_saved = gmp_result.get('file_saved')
+        if file_saved:
+            st.info(f"💾 Full analysis saved to: `{file_saved}`")
+    
+    # 3. DISPLAY ADVANCED FINANCIAL METRICS THIRD
+    if llm_analysis:
         llm_financial_metrics = llm_analysis.get('llm_financial_metrics')
         
-        # Debug information (can be removed in production)
-        # with st.expander("🔧 Debug Information", expanded=False):
-        #     st.write(f"LLM Financial Metrics type: {type(llm_financial_metrics)}")
-        #     st.write(f"LLM Analysis components: {list(llm_analysis.keys())}")
-        #     if hasattr(report, 'raw_data') and 'analysis_error' in report.raw_data:
-        #         st.error(f"Analysis Error: {report.raw_data['analysis_error']}")
-        
         if llm_financial_metrics:
+            st.markdown("---")
             display_llm_financial_metrics(llm_financial_metrics)
         else:
-            st.warning("⚠️ No LLM financial metrics extracted.")
-            
-            # Check for specific error information
-            if 'error' in llm_analysis:
-                st.error(f"LLM Analysis Error: {llm_analysis['error']}")
-            
-            # Show available analysis components
-            available_components = [k for k in llm_analysis.keys() if llm_analysis[k]]
-            if available_components:
-                st.info(f"✅ Available LLM Analysis Components: {', '.join(available_components)}")
-            
-            st.info("""
-            **Possible causes:**
-            - No prospectus text available for analysis
-            - LLM API call failed (check API keys)
-            - Data extraction returned empty results
-            - Network connectivity issues
-            """)
-        
-        # Display Benchmarking Analysis
+            # Only show warning if LLM analysis was attempted
+            if llm_analysis:
+                st.markdown("---")
+                st.warning("⚠️ No LLM financial metrics extracted.")
+                
+                # Check for specific error information
+                if 'error' in llm_analysis:
+                    st.error(f"LLM Analysis Error: {llm_analysis['error']}")
+                
+                # Show available analysis components
+                available_components = [k for k in llm_analysis.keys() if llm_analysis[k]]
+                if available_components:
+                    st.info(f"✅ Available LLM Analysis Components: {', '.join(available_components)}")
+    
+    # 4. DISPLAY COMPETITIVE BENCHMARKING FOURTH
+    if llm_analysis:
         llm_benchmarking = llm_analysis.get('llm_benchmarking')
         if llm_benchmarking:
+            st.markdown("---")
             display_llm_benchmarking(llm_benchmarking)
         
-        # Display IPO Specifics
+        # Display IPO Specifics (if available)
         llm_ipo_specifics = llm_analysis.get('llm_ipo_specifics')
         if llm_ipo_specifics:
+            st.markdown("---")
             display_llm_ipo_specifics(llm_ipo_specifics)
     
     # col1, col2, col3, col4 = st.columns(4)

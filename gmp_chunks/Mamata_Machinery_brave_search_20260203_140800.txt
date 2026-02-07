@@ -1,0 +1,24 @@
+Company: Mamata Machinery
+Source: Brave Search API
+Timestamp: 20260203_140800
+Results Count: 3
+================================================================================
+
+Result 1:
+  Title: Live IPO GMP updates | Grey Market Premium Pan India report
+  URL: https://chanakyanipothi.com/ipo-gmp/
+  Description: Live IPO GMP Real time updates ★ Pan-India report on Grey Market Premium with Chanakya’s expert insights on GMP trend
+  Age: 1 day ago
+
+Result 2:
+  Title: Brandman Retail IPO GMP, Grey Market Premium Today - IPO Watch
+  URL: https://ipowatch.in/brandman-retail-ipo-gmp-grey-market-premium/
+  Description: Founder of IPOWatch, brings nearly 15 years of experience in IPO analysis and market research. He provides complete coverage of upcoming IPOs, subscription trends, grey market premiums (GMP), and post-listing performance, along with easy-to-understand reviews, insights, and analysis.
+  Age: 1 day ago
+
+Result 3:
+  Title: Brandman Retail to raise ₹80 crore via IPO on NSE Emerge - The HinduBusinessLine
+  URL: https://www.thehindubusinessline.com/markets/brandman-retail-to-raise-80-crore-via-ipo-on-nse-emerge/article70586307.ece
+  Description: The net proceeds from the IPO will be used for expansion of new Retail Network by launching 15 Exclusive Brand Outlets and Multi-Brand Outlets, working capital requirements for EBOs and MBOs and General Corporate Expenses
+  Age: 1 hour ago
+

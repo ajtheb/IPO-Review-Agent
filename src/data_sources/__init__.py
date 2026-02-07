@@ -24,6 +24,16 @@ except ImportError:
     logger.warning("Enhanced prospectus parser not available - using basic parser")
     ENHANCED_PROSPECTUS_AVAILABLE = False
 
+# Import GMP (Grey Market Premium) fetcher
+try:
+    from .gmp_fetcher import GMPFetcher, fetch_ipo_gmp
+    GMP_FETCHER_AVAILABLE = True
+except ImportError:
+    logger.warning("GMP fetcher not available - install beautifulsoup4 for GMP functionality")
+    GMP_FETCHER_AVAILABLE = False
+    GMPFetcher = None
+    fetch_ipo_gmp = None
+
 
 class FinancialDataSource:
     """Handles financial data collection from various sources."""
@@ -303,16 +313,20 @@ class DataSourceManager:
         # Determine which prospectus integration to use
         use_enhanced_parser = (use_enhanced if use_enhanced is not None 
                              else self.use_enhanced)
-        print("Data::", data)
+        # print("Data::", data)
         if use_enhanced_parser and self.enhanced_prospectus_source:
             # Use enhanced prospectus integration
             logger.info(f"Using enhanced prospectus parsing for {company_name}")
             try:
                 data = integrate_enhanced_prospectus_data(company_name, data)
-                print("Data after enhanced integration", data)
+                
+                # Debug: Check if prospectus_text was added
+                has_prospectus_text = 'prospectus_text' in data
+                prospectus_text_length = len(data.get('prospectus_text', ''))
+                logger.info(f"After enhanced integration - prospectus_text present: {has_prospectus_text}, length: {prospectus_text_length}")
+                
                 # Add processing metrics
                 enhanced_data = data.get('enhanced_prospectus')
-                print("Enhanced data:", enhanced_data)
                 if enhanced_data:
                     data['prospectus_quality'] = {
                         'quality_score': enhanced_data.data_quality_score,
