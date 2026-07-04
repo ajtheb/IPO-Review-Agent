@@ -1,0 +1,26 @@
+.venv/
+__pycache__/
+**/__pycache__/
+*.pyc
+.git/
+.github/
+.vscode/
+.pytest_cache/
+
+# Local secrets and logs - never bake into the image
+.env
+*.log
+
+# Generated/local data - rebuilt at runtime or not needed in the image
+ipo_vector_db/
+gmp_chunks/
+context_chunks/
+structured_chunks/
+test_vector_db/
+test_output/
+benchmarks/*/reports/
+
+# Docs and examples not needed at runtime
+docs/
+examples/
+summaries/
