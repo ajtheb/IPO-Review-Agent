@@ -16,7 +16,7 @@ load_dotenv()
 # Add src to path
 sys.path.append(str(Path(__file__).parent / 'src'))
 
-from app import IPOReviewAgent
+from src.agent import IPOReviewAgent
 from src.models import InvestmentRecommendation, RiskLevel
 
 

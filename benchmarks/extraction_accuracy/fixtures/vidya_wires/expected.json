@@ -1,0 +1,83 @@
+{
+  "company_name": "Vidya Wires Limited",
+  "sector": "Manufacturing",
+  "source_note": "Hand-verified against the actual DRHP text in prospectus.txt (Draft Red Herring Prospectus, filed Jan 16 2025 - a pre-IPO draft, price band not yet set). All amounts in ₹ million unless noted. Every figure below was independently located in prospectus.txt via grep/read, not taken from any prior LLM extraction output. Fields marked null were not found stated, and are not independently computable, in the available document text - a correct extractor should also return null/'not disclosed' for these rather than a fabricated value; that is itself part of what this fixture tests.",
+  "tolerance_pct": 3.0,
+  "financial_metrics": {
+    "revenue_by_year_inr_million": {
+      "FY2022": 9169.83,
+      "FY2023": 10157.18,
+      "FY2024": 11884.89
+    },
+    "pat_by_year_inr_million": {
+      "FY2022": 197.31,
+      "FY2023": 214.99,
+      "FY2024": 256.93
+    },
+    "net_worth_by_year_inr_million": {
+      "FY2022": 783.27,
+      "FY2023": 1001.10,
+      "FY2024": 1255.38
+    },
+    "eps_basic_diluted_by_year": {
+      "FY2022": 1.23,
+      "FY2023": 1.34,
+      "FY2024": 1.61
+    },
+    "net_asset_value_per_share_by_year": {
+      "FY2022": 4.90,
+      "FY2023": 6.26,
+      "FY2024": 7.85
+    },
+    "revenue_growth_fy23_to_fy24_pct": 17.01,
+    "revenue_growth_fy22_to_fy23_pct": 10.77,
+    "profit_growth_fy23_to_fy24_pct": 19.51,
+    "net_profit_margin_fy2024_pct": 2.16,
+    "net_profit_margin_fy2023_pct": 2.12,
+    "trailing_pe_ratio": null,
+    "forward_pe_ratio": null,
+    "price_to_book_ratio": null,
+    "ev_to_ebitda_ratio": null,
+    "return_on_equity_pct": null,
+    "current_ratio": null,
+    "debt_to_equity_ratio": null,
+    "_note_on_nulls": "Valuation ratios (P/E, P/B, EV/EBITDA) are not computable pre-price-band. ROE/ROCE/current ratio/debt-to-equity are named as KPIs in the document's glossary section but their computed numeric values were not located in the retrievable text - not confirmed present, so treated as unverifiable rather than guessed."
+  },
+  "ipo_specifics": {
+    "price_band_disclosed": false,
+    "issue_price_inr": null,
+    "use_of_funds_inr_million": [
+      {
+        "purpose": "Funding capital expenditure requirements for new project in subsidiary ALCU Industries Private Limited",
+        "amount": 1400.00
+      },
+      {
+        "purpose": "Repayment/prepayment, in full or part, of outstanding borrowings",
+        "amount": 1000.00
+      },
+      {
+        "purpose": "General corporate purposes",
+        "amount": null,
+        "note": "capped at 25% of Gross Proceeds per SEBI ICDR Regulations; exact amount undisclosed pending Offer Price determination"
+      }
+    ],
+    "net_proceeds_disclosed": false,
+    "lead_managers": [
+      "Pantomath Capital Advisors Private Limited",
+      "IDBI Capital Markets & Securities Limited"
+    ],
+    "promoter_shareholding_pct": {
+      "Shyamsundar Rathi": 44.38,
+      "Shailesh Rathi": 47.49,
+      "Shilpa Rathi": 0.29,
+      "total_promoters": 92.16,
+      "total_promoters_and_group": 99.91
+    }
+  },
+  "business_facts": {
+    "copper_products_share_of_revenue": "over 90%",
+    "registered_office_state": "Gujarat",
+    "subsidiary_name": "ALCU Industries Private Limited",
+    "financial_year_end": "March 31"
+  }
+}

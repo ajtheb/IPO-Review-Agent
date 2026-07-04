@@ -223,7 +223,7 @@ GMPFetcher
 ### 1. CLI Integration
 
 ```python
-# Add to cli_app.py
+# Add to cli.py
 from src.data_sources.gmp_fetcher import GMPFetcher
 
 def cmd_gmp(company_name: str):

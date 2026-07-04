@@ -12,6 +12,7 @@ google-generativeai>=0.3.0
 
 # Vector database for document chunking and retrieval
 chromadb>=0.4.22
+sentence-transformers>=2.2.0  # Required for BAAI/bge-small-en-v1.5 embeddings
 
 # Financial data APIs
 yfinance==0.2.18
@@ -54,3 +55,6 @@ loguru==0.7.2
 # Web automation for SEBI document extraction
 selenium==4.15.2
 webdriver-manager==4.0.1
+
+# Testing
+pytest>=7.4.0

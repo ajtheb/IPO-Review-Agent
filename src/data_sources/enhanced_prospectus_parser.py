@@ -60,6 +60,7 @@ class EnhancedFinancialData:
     data_quality_score: float
     source_confidence: float
     validation_flags: List[str]
+    source_url: Optional[str] = None  # SEBI filing page the DRHP was fetched from
 
 
 class DataValidator:
@@ -1157,10 +1158,14 @@ class EnhancedProspectusDataSource:
                     
                     # Parse with enhanced parser
                     enhanced_data = self.parser.parse_enhanced(pdf_path, company_name)
-                    
+
                     print("enhanced_data:", enhanced_data)
 
                     if enhanced_data and enhanced_data.data_quality_score > 0.3:  # Minimum quality threshold
+                        # Record the SEBI filing page this DRHP came from, so the
+                        # UI can link back to the source document for verification
+                        enhanced_data.source_url = filing.get('url')
+
                         # Cache the results
                         if self.cache_manager:
                             self.cache_manager.cache_data(company_name, enhanced_data)

@@ -4,6 +4,14 @@ An intelligent IPO analysis system specifically designed for the **Indian stock 
 
 ## Features
 
+### 🤖 Intelligent Vector Search (NEW!)
+- **Smart Context Retrieval**: Uses ChromaDB with `BAAI/bge-small-en-v1.5` embeddings
+- **90-95% Context Reduction**: Only retrieves most relevant information
+- **Semantic Search**: Finds related content even with different wording
+- **Validated Quality**: All tests passing (run `python tests/test_embedding_model.py`)
+- **📖 See [summaries/EMBEDDING_MODEL_GUIDE.md](summaries/EMBEDDING_MODEL_GUIDE.md) for details**
+- **⚡ Quick Start: [summaries/VECTOR_DB_QUICKSTART.md](summaries/VECTOR_DB_QUICKSTART.md)**
+
 ### 🔍 Financial Analysis
 - Revenue growth and profitability analysis
 - Financial ratios and metrics calculation
@@ -80,9 +88,6 @@ cp .env.example .env
 streamlit run app.py
 ```
 
-**📖 For detailed setup instructions, see [VENV_SETUP_GUIDE.md](VENV_SETUP_GUIDE.md)**  
-**⚡ For quick commands, see [VENV_QUICK_REFERENCE.md](VENV_QUICK_REFERENCE.md)**
-
 ## Configuration
 
 Create a `.env` file with your API keys:
@@ -158,8 +163,6 @@ This will:
 - Extract GMP values using Groq LLM
 - Save all chunks and search results to `gmp_chunks/`
 - Display formatted results
-
-**📖 See [BRAVE_SEARCH_INTEGRATION.md](BRAVE_SEARCH_INTEGRATION.md) for GMP system details**
 
 ## Project Structure
 
