@@ -7,3 +7,19 @@ __pycache__/
 .DS_Store
 logs/
 .env
+
+# Context chunks folder - exclude all .txt files but keep README.md
+context/*.txt
+context/**/*.txt
+
+# GMP chunks folder - exclude scraped content
+gmp_chunks/
+
+# Other generated run artifacts
+structured_chunks/
+context_chunks/
+test_vector_db/
+test_output/
+
+# Generated benchmark run reports (fixtures/ under benchmarks/ stay tracked - they're hand-curated)
+benchmarks/*/reports/
