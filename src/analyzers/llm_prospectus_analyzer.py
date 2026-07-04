@@ -54,24 +54,28 @@ except ImportError:
 
 def safe_eval(expr: str) -> float:
     """
-    Safely evaluate a simple arithmetic expression.
-    
+    Safely evaluate a simple arithmetic expression. Accepts '^' as an
+    exponentiation operator - LLMs commonly write CAGR-style expressions like
+    "(a/b)^(1/2)" - and translates it to Python's '**' before evaluating,
+    since Python's '^' is bitwise XOR, not exponentiation.
+
     Args:
-        expr: String containing arithmetic expression (e.g., "(256.93 / 11884.89) * 100")
-    
+        expr: String containing arithmetic expression (e.g., "(256.93 / 11884.89) * 100"
+              or "((11884.89 / 8523.45)^(1/2) - 1) * 100")
+
     Returns:
         Evaluated numerical result
-    
+
     Raises:
         ValueError: If expression contains unsafe characters
     """
-    # Only allow numbers, operators, spaces, and parentheses
-    if not re.match(r'^[\d.\s+\-*/()]+$', expr):
+    # Only allow numbers, operators (including '^' for exponentiation), spaces, and parentheses
+    if not re.match(r'^[\d.\s+\-*/^()]+$', expr):
         raise ValueError(f"Unsafe expression: {expr}")
-    
+
     try:
         # Evaluate with restricted builtins for safety
-        result = eval(expr, {"__builtins__": {}}, {})
+        result = eval(expr.replace('^', '**'), {"__builtins__": {}}, {})
         return float(result)
     except Exception as e:
         logger.warning(f"Failed to evaluate expression '{expr}': {e}")
@@ -97,11 +101,19 @@ def evaluate_expressions_in_dict(data: dict) -> dict:
     for k, v in data.items():
         if isinstance(v, str):
             v_strip = v.strip()
+            # LLMs sometimes decorate a numeric/percentage field with a
+            # trailing '%' or thousands-separator commas despite being told
+            # to return a bare float or expression (e.g. "23.73%" instead of
+            # "23.73"). Strip that decoration before checking whether it's a
+            # numeric expression, otherwise the raw string survives into the
+            # dataclass untouched (no runtime type check there) and later
+            # crashes any ":.2f" formatting downstream.
+            v_clean = v_strip.rstrip('%').replace(',', '').strip()
             # Detect if it's an arithmetic expression (numbers and operators only)
-            if re.match(r'^[\d.\s+\-*/()]+$', v_strip):
+            if re.match(r'^[\d.\s+\-*/^()]+$', v_clean):
                 try:
                     # Evaluate and round to 2 decimal places
-                    evaluated_value = safe_eval(v_strip)
+                    evaluated_value = safe_eval(v_clean)
                     data[k] = round(evaluated_value, 2)
                     logger.debug(f"Evaluated expression '{v_strip}' = {data[k]}")
                 except Exception as e:
@@ -266,6 +278,52 @@ class LLMProspectusAnalyzer:
         if not self.client:
             logger.error(f"Failed to initialize {provider} client")
     
+    def _save_context_chunks(
+        self,
+        company_name: str,
+        context_type: str,
+        content: str,
+        metadata: Optional[Dict[str, Any]] = None
+    ) -> None:
+        """
+        Save context chunks to a file for debugging and reference.
+        
+        Args:
+            company_name: Name of the company
+            context_type: Type of context (e.g., "prospectus_text", "brave_search_results")
+            content: The actual content to save
+            metadata: Optional metadata to save alongside the content
+        """
+        try:
+            # Create context directory if it doesn't exist
+            context_dir = Path("context_chunks")
+            context_dir.mkdir(exist_ok=True)
+            
+            # Sanitize company name for filename
+            safe_company_name = re.sub(r'[^\w\s-]', '', company_name).strip().replace(' ', '_')
+            
+            # Create company-specific subdirectory
+            company_dir = context_dir / safe_company_name
+            company_dir.mkdir(exist_ok=True)
+            
+            # Generate filename with timestamp
+            timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+            filename = f"{context_type}_{timestamp}.txt"
+            filepath = company_dir / filename
+            
+            # Save content and metadata
+            with open(filepath, 'w', encoding='utf-8') as f:
+                if metadata:
+                    f.write("=== METADATA ===\n")
+                    f.write(json.dumps(metadata, indent=2))
+                    f.write("\n\n=== CONTENT ===\n")
+                f.write(content)
+            
+            logger.debug(f"Saved context chunks to {filepath}")
+        except Exception as e:
+            # Don't fail the main operation if saving fails
+            logger.warning(f"Failed to save context chunks: {e}")
+    
     def search_brave_for_ipo_context(self, company_name: str, max_results: int = 5) -> List[Dict[str, str]]:
         """
         Search for IPO information using Brave Search API.
@@ -408,47 +466,124 @@ class LLMProspectusAnalyzer:
             # Clear vector database before storing new PDF
             self.clear_vector_database()
             
-            # Split document into chunks
-            # chunks = self._chunk_document(pdf_text)
-            # logger.info(f"Created {len(chunks)} chunks from prospectus")
+            # Split document into chunks, keeping detected tables intact so
+            # financial statements never get sliced mid-row by the recursive splitter
+            chunks = self._chunk_document_table_aware(pdf_text)
+            logger.info(f"Created {len(chunks)} chunks from prospectus using table-aware splitter")
 
-            # Split document into chunks using recursive splitter
-            chunks = self._chunk_document_recursive(pdf_text)
-            logger.info(f"Created {len(chunks)} chunks from prospectus using recursive splitter")
-
-            # Classify and store chunks in appropriate collections
+            # Save all chunks for debugging before storing in vector DB
+            # Also collect table statistics
+            table_stats = {
+                'total_chunks': len(chunks),
+                'chunks_with_tables': 0,
+                'chunks_with_financial_tables': 0,
+                'chunks_with_multi_year_data': 0,
+                'high_density_chunks': 0  # density > 0.5
+            }
+            
+            all_chunks_content = []
             for i, chunk in enumerate(chunks):
                 chunk_type = self._classify_chunk(chunk)
-                chunk_id = f"{company_name}_{chunk_type}_{i}"
+                table_info = self._detect_table_structure(chunk)
+                metric_density = self._calculate_metric_density(chunk)
                 
-                metadata = {
-                    "company": company_name,
+                # Update stats
+                if table_info['contains_table']:
+                    table_stats['chunks_with_tables'] += 1
+                if table_info['table_type'] == 'financial_table':
+                    table_stats['chunks_with_financial_tables'] += 1
+                if table_info['has_multi_year_data']:
+                    table_stats['chunks_with_multi_year_data'] += 1
+                if metric_density > 0.5:
+                    table_stats['high_density_chunks'] += 1
+                
+                chunk_header = (f"=== CHUNK {i+1} ===\n"
+                              f"Type: {chunk_type}\n"
+                              f"Length: {len(chunk)} chars\n"
+                              f"Contains Table: {table_info['contains_table']}\n"
+                              f"Table Type: {table_info['table_type']}\n"
+                              f"Multi-Year Data: {table_info['has_multi_year_data']}\n"
+                              f"Financial Years: {table_info['financial_years']}\n"
+                              f"Metric Density: {metric_density:.3f}\n")
+                all_chunks_content.append(f"{chunk_header}\n{chunk}")
+            
+            self._save_context_chunks(
+                company_name=company_name,
+                context_type="all_prospectus_chunks",
+                content="\n\n".join(all_chunks_content),
+                metadata={
+                    "total_chunks": len(chunks),
+                    "chunk_method": "recursive",
                     "sector": sector,
-                    "chunk_type": chunk_type,
-                    "chunk_index": i,
                     "ipo_date": ipo_date or "unknown",
-                    "timestamp": datetime.now().isoformat()
+                    "table_statistics": table_stats,
+                    "chunk_types": {
+                        "financial": sum(1 for c in chunks if self._classify_chunk(c) == "financial"),
+                        "competitive": sum(1 for c in chunks if self._classify_chunk(c) == "competitive"),
+                        "ipo_specific": sum(1 for c in chunks if self._classify_chunk(c) == "ipo_specific"),
+                        "general": sum(1 for c in chunks if self._classify_chunk(c) == "general")
+                    }
                 }
-                
-                # Store in appropriate collection based on chunk type
-                if chunk_type == "financial":
-                    collection = self.collections['financial_sections']
-                elif chunk_type == "competitive":
-                    collection = self.collections['competitive_sections'] 
-                elif chunk_type == "ipo_specific":
-                    collection = self.collections['ipo_sections']
-                else:
-                    collection = self.collections['prospectus_chunks']
-                
-                # Add chunk to collection
-                collection.add(
-                    documents=[chunk],
-                    metadatas=[metadata],
-                    ids=[chunk_id]
-                )
+            )
+
+            # Classify and store chunks in appropriate collections with enhanced metadata.
+            # A chunk that clears the classification threshold on more than one
+            # type (e.g. an "Objects of the Offer" table with financial figures)
+            # is stored in every matching collection, not just its primary type,
+            # so it's discoverable from each collection's targeted queries.
+            collection_by_type = {
+                "financial": self.collections['financial_sections'],
+                "competitive": self.collections['competitive_sections'],
+                "ipo_specific": self.collections['ipo_sections'],
+                "general": self.collections['prospectus_chunks'],
+            }
+
+            for i, chunk in enumerate(chunks):
+                chunk_types = self._classify_chunk_types(chunk)
+                primary_type = chunk_types[0]
+
+                # Detect table structure and calculate metric density
+                table_info = self._detect_table_structure(chunk)
+                metric_density = self._calculate_metric_density(chunk)
+
+                for chunk_type in chunk_types:
+                    chunk_id = f"{company_name}_{chunk_type}_{i}"
+
+                    # Enhanced metadata with table-aware information
+                    metadata = {
+                        "company": company_name,
+                        "sector": sector,
+                        "chunk_type": chunk_type,
+                        "chunk_types": ",".join(chunk_types),
+                        "is_primary_type": chunk_type == primary_type,
+                        "chunk_index": i,
+                        "ipo_date": ipo_date or "unknown",
+                        "timestamp": datetime.now().isoformat(),
+                        # Table-aware metadata
+                        "contains_financial_table": table_info['contains_table'] and table_info['table_type'] == 'financial_table',
+                        "contains_table": table_info['contains_table'],
+                        "table_type": table_info['table_type'],
+                        "table_row_count": table_info['row_count'],
+                        "table_column_count": table_info['column_count'],
+                        "has_multi_year_data": table_info['has_multi_year_data'],
+                        "financial_years": ','.join(map(str, table_info['financial_years'])) if table_info['financial_years'] else "",
+                        "metric_density": metric_density,
+                        "chunk_length": len(chunk)
+                    }
+
+                    collection_by_type[chunk_type].add(
+                        documents=[chunk],
+                        metadatas=[metadata],
+                        ids=[chunk_id]
+                    )
             
             print(f"Successfully stored {len(chunks)} chunks for {company_name}")
-            logger.info(f"Successfully stored {len(chunks)} chunks for {company_name}")
+            print(f"Table Statistics:")
+            print(f"  - Chunks with tables: {table_stats['chunks_with_tables']}")
+            print(f"  - Chunks with financial tables: {table_stats['chunks_with_financial_tables']}")
+            print(f"  - Chunks with multi-year data: {table_stats['chunks_with_multi_year_data']}")
+            print(f"  - High-density chunks (>0.5): {table_stats['high_density_chunks']}")
+            logger.info(f"Successfully stored {len(chunks)} chunks with table stats: {table_stats}")
             
         except Exception as e:
             print(f"Error chunking and storing prospectus: {e}")
@@ -502,7 +637,9 @@ class LLMProspectusAnalyzer:
             # Level 0: Paragraphs, Level 1: Sentences, Level 2: Characters
             if len(text) <= chunk_size:
                 return [text.strip()]
-            separators = ["\n\n", r'[.!?]+', '']  # Paragraph, sentence, char
+            # Sentence split excludes '.'/'!'/'?' immediately between digits, so
+            # decimal numbers like "1,255.38" aren't fragmented into "1,255" + "38".
+            separators = ["\n\n", r'(?<!\d)[.!?]+(?!\d)', '']  # Paragraph, sentence, char
             sep = separators[level]
             if sep:
                 if level == 0:
@@ -511,41 +648,142 @@ class LLMProspectusAnalyzer:
                     splits = re.split(sep, text)
             else:
                 splits = list(text)
+            # Reassembled text uses this literal joiner instead of re-inserting the
+            # regex pattern itself (which re.split() discards, not the punctuation).
+            join_str = sep if level == 0 else (". " if sep else "")
             chunks = []
             current = ""
-            for i, part in enumerate(splits):
+            for part in splits:
                 part = part.strip()
                 if not part:
                     continue
-                if current:
-                    candidate = current + (sep if sep and not current.endswith(sep) else "") + part
-                else:
-                    candidate = part
-                if len(candidate) > chunk_size:
+
+                # A single part that's already too big can't be accumulated into
+                # `current` no matter what - recurse into it directly regardless of
+                # whether `current` happens to be empty right now, otherwise an
+                # oversized part following existing content bypasses size limits
+                # entirely and gets dumped in whole.
+                if len(part) > chunk_size:
                     if current:
-                        # If current is not empty, finalize it and start new
                         chunks.append(current.strip())
-                        # Overlap
-                        overlap_text = current[-overlap:] if overlap > 0 else ""
-                        current = overlap_text + (sep if sep else "") + part
+                        current = ""
+                    if level < 2:
+                        chunks.extend(recursive_split(part, chunk_size, overlap, level + 1))
                     else:
-                        # If a single part is too big, go deeper
-                        if level < 2:
-                            subchunks = recursive_split(part, chunk_size, overlap, level + 1)
-                            chunks.extend(subchunks)
-                            current = ""
-                        else:
-                            # At char level, just cut
-                            chunks.append(part[:chunk_size])
-                            current = part[chunk_size - overlap:] if overlap > 0 else ""
+                        step = chunk_size - overlap if overlap < chunk_size else chunk_size
+                        for i in range(0, len(part), step):
+                            chunks.append(part[i:i + chunk_size])
+                    continue
+
+                candidate = (current + join_str + part) if current else part
+                if len(candidate) > chunk_size:
+                    chunks.append(current.strip())
+                    overlap_text = current[-overlap:] if overlap > 0 else ""
+                    current = overlap_text + join_str + part
                 else:
                     current = candidate
+
             if current.strip():
                 chunks.append(current.strip())
             return chunks
 
         return recursive_split(text, chunk_size, overlap, 0)
     
+    def _is_table_line(self, line: str) -> bool:
+        """Heuristic check for whether a single line looks like a table row."""
+        if not line.strip():
+            return False
+        if line.count('|') >= 2:
+            return True
+        # No leading \b: header rows like "Particulars FY2024 FY2023 FY2022"
+        # embed digits right after letters, where \b doesn't match, so a
+        # word-boundary-anchored pattern would miss the year tokens entirely.
+        numbers = re.findall(r'\d+(?:,\d+)*(?:\.\d+)?', line)
+        if len(numbers) >= 3:
+            return True
+        if re.match(r'^\s*[\w\s,()/&-]+?\s+[\d,.-]+\s+[\d,.-]+\s+[\d,.-]+', line):
+            return True
+        return False
+
+    def _find_table_spans(self, text: str, min_rows: int = 3, max_gap: int = 2) -> List[Tuple[int, int]]:
+        """
+        Find contiguous line ranges that look like tables. Tolerates up to
+        max_gap non-table lines inside a span (title/column-header/blank lines
+        interleaved with numeric rows) so one real financial table isn't
+        fragmented into several near-miss spans.
+        """
+        lines = text.split('\n')
+        is_table = [self._is_table_line(l) for l in lines]
+
+        spans = []
+        i, n = 0, len(lines)
+        while i < n:
+            if not is_table[i]:
+                i += 1
+                continue
+            start = i
+            last_table_line = i
+            j = i + 1
+            while j < n and (is_table[j] or j - last_table_line <= max_gap):
+                if is_table[j]:
+                    last_table_line = j
+                j += 1
+            end = last_table_line
+            if sum(is_table[start:end + 1]) >= min_rows:
+                # Pull in one preceding line if it looks like a table title/header
+                if start > 0 and lines[start - 1].strip() and not is_table[start - 1]:
+                    start -= 1
+                spans.append((start, end))
+            i = j
+        return spans
+
+    def _chunk_document_table_aware(self, text: str, chunk_size: int = 2000,
+                                     overlap: int = 200, max_table_chunk_size: int = 8000) -> List[str]:
+        """
+        Split the document into chunks, keeping detected tables intact as
+        atomic chunks (even past chunk_size) so a financial statement never
+        gets sliced mid-row. Text between tables still goes through the
+        normal recursive splitter.
+        """
+        lines = text.split('\n')
+        spans = self._find_table_spans(text)
+
+        chunks = []
+        cursor = 0
+        for start, end in spans:
+            if start > cursor:
+                pre_text = '\n'.join(lines[cursor:start]).strip()
+                if pre_text:
+                    chunks.extend(self._chunk_document_recursive(pre_text, chunk_size, overlap))
+
+            table_text = '\n'.join(lines[start:end + 1]).strip()
+            if len(table_text) <= max_table_chunk_size:
+                chunks.append(table_text)
+            else:
+                # Table too large to keep whole (e.g. a multi-page appendix) -
+                # split on line boundaries only, repeating the title/header
+                # line in each piece so no piece loses its column labels.
+                header_text = lines[start].strip()
+                piece_lines, piece_len = [], 0
+                for line in lines[start:end + 1]:
+                    line_len = len(line) + 1
+                    if piece_len + line_len > max_table_chunk_size and piece_lines:
+                        chunks.append('\n'.join(piece_lines).strip())
+                        piece_lines = [header_text] if header_text else []
+                        piece_len = len(header_text) + 1 if piece_lines else 0
+                    piece_lines.append(line)
+                    piece_len += line_len
+                if piece_lines:
+                    chunks.append('\n'.join(piece_lines).strip())
+
+            cursor = end + 1
+
+        tail_text = '\n'.join(lines[cursor:]).strip()
+        if tail_text:
+            chunks.extend(self._chunk_document_recursive(tail_text, chunk_size, overlap))
+
+        return [c for c in chunks if c.strip()]
+
     def _get_overlap_text(self, text: str, overlap_chars: int) -> str:
         """Get the last overlap_chars characters for chunk overlap."""
         if len(text) <= overlap_chars:
@@ -560,51 +798,315 @@ class LLMProspectusAnalyzer:
         else:
             return overlap_text
     
-    def _classify_chunk(self, chunk: str) -> str:
+    def _detect_table_structure(self, chunk: str) -> Dict[str, Any]:
         """
-        Classify document chunk type based on content keywords.
+        Detect if chunk contains table-like structures and extract table metadata.
+        
+        Returns:
+            Dictionary with table detection results including:
+            - contains_table: bool
+            - table_type: str (financial_table, data_table, text_table, or none)
+            - row_count: int
+            - column_count: int (estimated)
+            - has_multi_year_data: bool
+            - financial_years: List[int]
         """
+        table_info = {
+            'contains_table': False,
+            'table_type': 'none',
+            'row_count': 0,
+            'column_count': 0,
+            'has_multi_year_data': False,
+            'financial_years': []
+        }
+        
+        # Pattern 1: Multiple sequences of whitespace/tabs suggesting columns
+        # Look for lines with 3+ numeric values separated by whitespace
+        numeric_row_pattern = r'^\s*[\w\s,()]+?\s+[\d,.-]+\s+[\d,.-]+\s+[\d,.-]+'
+        numeric_rows = re.findall(numeric_row_pattern, chunk, re.MULTILINE)
+        
+        # Pattern 2: Pipe-separated values (|)
+        pipe_rows = [line for line in chunk.split('\n') if line.count('|') >= 2]
+        
+        # Pattern 3: Multiple aligned numeric columns
+        lines = chunk.split('\n')
+        aligned_numeric_lines = 0
+        for line in lines:
+            # Count numbers in line
+            numbers = re.findall(r'\b\d+(?:,\d+)*(?:\.\d+)?\b', line)
+            if len(numbers) >= 3:
+                aligned_numeric_lines += 1
+        
+        # Determine if this looks like a table
+        if len(numeric_rows) >= 3 or len(pipe_rows) >= 3 or aligned_numeric_lines >= 4:
+            table_info['contains_table'] = True
+            table_info['row_count'] = max(len(numeric_rows), len(pipe_rows), aligned_numeric_lines)
+            
+            # Estimate column count
+            if pipe_rows:
+                table_info['column_count'] = max(line.count('|') for line in pipe_rows) + 1
+            elif numeric_rows:
+                # Count whitespace-separated segments
+                sample_row = numeric_rows[0] if numeric_rows else ""
+                table_info['column_count'] = len(re.findall(r'[\d,.-]+', sample_row))
+            else:
+                table_info['column_count'] = 3  # Default estimate
+        
+        # Detect financial table type based on keywords
         chunk_lower = chunk.lower()
         
+        # Enhanced financial table keywords including Indian statement terminology
+        financial_table_keywords = [
+            'revenue', 'profit', 'ebitda', 'ebit', 'pat', 'pbt',
+            'assets', 'liabilities', 'equity', 'reserves',
+            'cash flow', 'operating', 'financing', 'investing',
+            'balance sheet', 'income statement', 'p&l', 'profit and loss',
+            'margin', 'ratio', 'roe', 'roa', 'roce',
+            'restated', 'particulars', 'lakhs', 'crores'  # Indian statement markers
+        ]
+        
+        # Specific patterns for Indian financial statements (high confidence indicators)
+        indian_financial_patterns = [
+            # P&L Statement markers
+            r'particulars.*fy.*20\d{2}',           # "Particulars FY 2024 FY 2023"
+            r'statement.*of.*profit.*(?:and|&).*loss',  # "Statement of Profit and Loss"
+            r'revenue.*from.*operations',           # Standard P&L header
+            r'other.*income',                       # P&L line item
+            r'total.*income',                       # P&L subtotal
+            r'cost.*of.*(?:materials|goods|sales)', # P&L expense line
+            r'employee.*benefit.*expense',          # P&L expense line
+            r'finance.*costs?',                     # Interest expense
+            r'depreciation.*(?:and|&).*amortization', # D&A line
+            r'profit.*before.*(?:tax|interest)',    # PBT/PBIT
+            r'profit.*after.*tax',                  # PAT
+            r'earnings.*per.*share',                # EPS
+            r'ebitda',                              # EBITDA (critical!)
+            
+            # Balance Sheet markers
+            r'statement.*of.*assets.*(?:and|&).*liabilities', # Balance sheet title
+            r'(?:as|as\s+at).*(?:march|september|june|december).*\d{2}', # Period header
+            r'assets.*liabilities',                 # Generic balance sheet
+            r'non[-\s]?current.*assets',           # Asset classification
+            r'current.*assets',                     # Asset classification
+            r'property.*plant.*equipment',          # Fixed assets
+            r'intangible.*assets',                  # Intangible assets
+            r'inventories',                         # Current asset
+            r'trade.*receivables',                  # Current asset
+            r'cash.*(?:and|&).*cash.*equivalents',  # Current asset
+            r'current.*liabilities',                # Liability classification
+            r'non[-\s]?current.*liabilities',      # Liability classification
+            r'trade.*payables',                     # Current liability
+            r'borrowings',                          # Debt
+            r'equity.*share.*capital',              # Equity section
+            r'reserves.*(?:and|&).*surplus',        # Equity section
+            r'total.*equity',                       # Equity total
+            
+            # Cash Flow Statement markers
+            r'statement.*of.*cash.*flows?',         # Cash flow title
+            r'cash.*flow.*from.*operating.*activities', # Operating CF
+            r'cash.*flow.*from.*investing.*activities', # Investing CF
+            r'cash.*flow.*from.*financing.*activities', # Financing CF
+            r'net.*(?:increase|decrease).*in.*cash', # Cash flow net change
+            
+            # Financial Ratios markers
+            r'key.*financial.*(?:ratios?|metrics?|indicators?)', # Ratio table title
+            r'current.*ratio.*\d+\.\d+',           # Current ratio with value
+            r'debt.*(?:to|/).*equity.*ratio.*\d+\.\d+', # D/E ratio with value
+            r'return.*on.*equity.*\d+\.\d+',       # ROE with value
+            r'return.*on.*assets.*\d+\.\d+',       # ROA with value
+            r'return.*on.*capital.*employed',      # ROCE
+            r'net.*profit.*margin.*\d+\.\d+',      # NPM with value
+            r'operating.*profit.*margin.*\d+\.\d+', # OPM with value
+            r'interest.*coverage.*ratio',           # ICR
+            r'debt.*service.*coverage.*ratio',      # DSCR
+            
+            # Indian-specific formats
+            r'₹.*in.*(?:lakhs?|crores?|millions?|thousands?)', # Currency headers with Indian units
+            r'\((?:in|₹).*(?:lakhs?|crores?)\)',   # Unit indicators in brackets
+            r'(?:all\s+)?amounts?.*(?:are\s+)?in.*₹?.*(?:lakhs?|crores?|millions?)', # Alternative currency format
+            r'restated.*(?:statement|financials|consolidated|standalone)', # Restated financials
+            r'(?:for|as\s+at).*(?:the\s+)?(?:year|period|six\s+months?).*ended', # Period indicators
+            r'audited.*(?:financial|results|statements)', # Audit status
+            r'unaudited.*(?:financial|results)',    # Unaudited status
+            
+            # Multi-year data patterns (strong signal)
+            r'fy\s*20\d{2}.*fy\s*20\d{2}',         # Multiple fiscal years
+            r'march.*20\d{2}.*march.*20\d{2}',     # Multiple March year-ends
+            r'september.*20\d{2}.*september.*20\d{2}', # Multiple September periods
+            
+            # Summary/Key metrics tables
+            r'financial.*highlights?',              # Financial highlights section
+            r'key.*(?:performance|financial).*(?:indicators|metrics)', # KPI table
+            r'summary.*of.*(?:financial|restated).*(?:information|data)', # Summary tables
+            r'selected.*financial.*(?:data|information)', # Selected financials
+            
+            # IPO-specific financial sections
+            r'basis.*of.*(?:issue|ipo).*price',    # Pricing basis
+            r'(?:net|book).*asset.*value.*per.*share', # NAV per share
+            r'comparison.*with.*(?:peer|listed).*companies', # Peer comparison
+            r'earning.*per.*share.*(?:basic|diluted)', # EPS details
+        ]
+        
+        # Boost score for Indian financial statement patterns
+        has_indian_pattern = any(re.search(pattern, chunk_lower) for pattern in indian_financial_patterns)
+        
+        if table_info['contains_table']:
+            financial_keyword_count = sum(1 for kw in financial_table_keywords if kw in chunk_lower)
+            
+            # High confidence if Indian patterns present
+            if has_indian_pattern and financial_keyword_count >= 1:
+                table_info['table_type'] = 'financial_table'
+            # Medium confidence if multiple financial keywords
+            elif financial_keyword_count >= 2:
+                table_info['table_type'] = 'financial_table'
+            else:
+                table_info['table_type'] = 'data_table'
+        
+        # Detect multi-year financial data
+        # Look for year patterns like FY2023, 2022-23, FY 2021, Mar-23, etc.
+        year_patterns = [
+            r'\bFY\s*20\d{2}\b',           # FY2023, FY 2023
+            r'\b20\d{2}-\d{2}\b',          # 2022-23
+            r'\b20\d{2}\b',                # 2023
+            r'\b(?:Mar|Apr|Sep|Dec)[-\s]?\d{2}\b',  # Mar-23, Apr 23
+        ]
+        
+        found_years = set()
+        for pattern in year_patterns:
+            matches = re.findall(pattern, chunk, re.IGNORECASE)
+            for match in matches:
+                # Extract 4-digit year or convert 2-digit to 4-digit
+                year_match = re.search(r'20\d{2}', match)
+                if year_match:
+                    found_years.add(int(year_match.group()))
+                else:
+                    # Handle 2-digit years like "23" in "2022-23"
+                    two_digit = re.search(r'\d{2}$', match)
+                    if two_digit:
+                        year = 2000 + int(two_digit.group())
+                        if year <= 2030:  # Sanity check
+                            found_years.add(year)
+        
+        if len(found_years) >= 2:
+            table_info['has_multi_year_data'] = True
+            table_info['financial_years'] = sorted(list(found_years), reverse=True)
+        
+        return table_info
+    
+    def _calculate_metric_density(self, chunk: str) -> float:
+        """
+        Calculate density of financial metrics in chunk.
+        Higher density means more financial numbers/metrics per character.
+        
+        Returns:
+            Float between 0.0 and 1.0 representing metric density
+        """
+        if not chunk:
+            return 0.0
+        
+        chunk_lower = chunk.lower()
+        
+        # Count financial metric indicators
+        metric_keywords = [
+            'revenue', 'profit', 'ebitda', 'ebit', 'pat', 'pbt',
+            'margin', 'ratio', 'roe', 'roa', 'roce', 'assets', 'liabilities',
+            'debt', 'equity', 'cash flow', 'eps', 'nav', 'book value',
+            'turnover', 'income', 'expense', 'cost', 'earnings'
+        ]
+        
+        # Count numeric values (potential metrics)
+        numeric_values = re.findall(r'\b\d+(?:,\d+)*(?:\.\d+)?\b', chunk)
+        
+        # Count percentage values
+        percentage_values = re.findall(r'\d+(?:\.\d+)?%', chunk)
+        
+        # Count currency values
+        currency_values = re.findall(r'[₹$€£]\s*\d+(?:,\d+)*(?:\.\d+)?', chunk)
+        
+        # Count metric keywords
+        keyword_count = sum(1 for kw in metric_keywords if kw in chunk_lower)
+        
+        # Calculate density score
+        total_indicators = len(numeric_values) + len(percentage_values) + len(currency_values) + (keyword_count * 2)
+        density = min(total_indicators / (len(chunk) / 100), 1.0)  # Normalize per 100 chars
+        
+        return round(density, 3)
+    
+    def _classify_chunk_types(self, chunk: str, threshold: int = 2) -> List[str]:
+        """
+        Score a chunk against each category's keywords and return every type
+        whose score clears `threshold`, not just the single highest-scoring
+        one. A chunk can legitimately be both e.g. "financial" (profit/income
+        figures) and "ipo_specific" (it's the Objects of the Offer table) -
+        picking only the argmax made it invisible to whichever collection's
+        targeted queries didn't match its single assigned type. Types are
+        checked in priority order (financial > competitive > ipo_specific) so
+        the first entry is always the same "primary" type the old single-label
+        classifier would have picked.
+        """
+        chunk_lower = chunk.lower()
+
         # Financial keywords
         financial_keywords = [
             'revenue', 'profit', 'ebitda', 'assets', 'liabilities', 'cash flow',
-            'balance sheet', 'income statement', 'financial performance', 
+            'balance sheet', 'income statement', 'financial performance',
             'ratio analysis', 'margin', 'return on equity', 'debt'
         ]
-        
-        # Competitive/business keywords  
+
+        # Competitive/business keywords
         competitive_keywords = [
             'competition', 'competitors', 'market share', 'business model',
             'strategy', 'advantages', 'strengths', 'weaknesses', 'industry',
             'market position', 'differentiation'
         ]
-        
-        # IPO-specific keywords
+
+        # IPO-specific keywords. Includes Indian DRHP-standard terminology
+        # ("objects of the offer/issue", "net proceeds") alongside the more
+        # generic phrasing - a chunk titled "Objects of the Offer" (SEBI's
+        # standard heading for use-of-proceeds tables) wouldn't otherwise match
+        # any of these keywords and would get classified as "financial" purely
+        # from the profit/income figures alongside it, making it invisible to
+        # any ipo_specific-collection search.
         ipo_keywords = [
             'ipo', 'public offering', 'price band', 'listing', 'underwriter',
             'lead manager', 'use of proceeds', 'fund utilization', 'allotment',
-            'book building', 'anchor investor'
+            'book building', 'anchor investor', 'objects of the offer',
+            'objects of the issue', 'net proceeds'
         ]
-        
-        # Count keyword matches
-        financial_score = sum(1 for keyword in financial_keywords if keyword in chunk_lower)
-        competitive_score = sum(1 for keyword in competitive_keywords if keyword in chunk_lower)
-        ipo_score = sum(1 for keyword in ipo_keywords if keyword in chunk_lower)
-        
-        # Classify based on highest score
-        if financial_score >= competitive_score and financial_score >= ipo_score:
-            return "financial"
-        elif competitive_score >= ipo_score:
-            return "competitive" 
-        elif ipo_score > 0:
-            return "ipo_specific"
-        else:
-            return "general"
+
+        # Count keyword matches, in priority order for tie-breaking
+        scores = [
+            ("financial", sum(1 for keyword in financial_keywords if keyword in chunk_lower)),
+            ("competitive", sum(1 for keyword in competitive_keywords if keyword in chunk_lower)),
+            ("ipo_specific", sum(1 for keyword in ipo_keywords if keyword in chunk_lower)),
+        ]
+
+        types = [t for t, score in scores if score >= threshold]
+        if types:
+            return types
+
+        # Nothing cleared the threshold - fall back to whichever type (if any)
+        # scored highest, same as the old single-label classifier's argmax.
+        best_type, best_score = max(scores, key=lambda ts: ts[1])
+        return [best_type] if best_score > 0 else ["general"]
+
+    def _classify_chunk(self, chunk: str) -> str:
+        """Primary (highest-priority) type for a chunk - see _classify_chunk_types."""
+        return self._classify_chunk_types(chunk)[0]
     
-    def retrieve_relevant_context(self, query: str, chunk_type: str = "all", n_results: int = 3) -> List[str]:
+    def retrieve_relevant_context(self, query: str, chunk_type: str = "all", n_results: int = 3, 
+                                 prioritize_tables: bool = True) -> List[str]:
         """
         Retrieve relevant document chunks for enhancing LLM analysis.
+        
+        Args:
+            query: Search query
+            chunk_type: Type of chunks to retrieve ('all', 'financial', 'competitive', etc.)
+            n_results: Number of results to retrieve per collection
+            prioritize_tables: If True, prioritize chunks containing financial tables
+        
+        Returns:
+            List of relevant chunk texts, sorted by relevance and table priority
         """
         if not self.use_vector_db:
             return []
@@ -626,26 +1128,184 @@ class LLMProspectusAnalyzer:
                 collection = collection_map.get(chunk_type)
                 collections_to_search = [collection] if collection else []
             
+            # Retrieve more results initially for re-ranking
+            retrieval_multiplier = 3 if prioritize_tables else 1
+            
             for collection in collections_to_search:
                 try:
                     results = collection.query(
                         query_texts=[query],
-                        n_results=n_results
+                        n_results=n_results * retrieval_multiplier
                     )
                     
-                    if results and results['documents']:
-                        contexts.extend(results['documents'][0])  # Flatten the nested list
+                    if results and results['documents'] and results['metadatas']:
+                        # Combine documents with metadata for ranking
+                        for doc, metadata in zip(results['documents'][0], results['metadatas'][0]):
+                            contexts.append({
+                                'document': doc,
+                                'metadata': metadata
+                            })
                         
                 except Exception as e:
                     logger.warning(f"Error querying collection: {e}")
                     continue
             
-            print(f"Retrieved {len(contexts)} context chunks for query: {query[:50]}...")
-            logger.info(f"Retrieved {len(contexts)} context chunks for query")
-            return contexts[:n_results * 2]  # Limit total results
+            # Prioritize chunks with financial tables if requested
+            if prioritize_tables and contexts:
+                # Sort by priority: financial_table > multi_year_data > high_metric_density > others
+                def get_priority_score(ctx):
+                    meta = ctx['metadata']
+                    score = 0.0
+                    
+                    # Highest priority: chunks with financial tables
+                    if meta.get('contains_financial_table', False):
+                        score += 100.0
+                    
+                    # High priority: chunks with tables (any type)
+                    if meta.get('contains_table', False):
+                        score += 50.0
+                    
+                    # Medium-high priority: multi-year data
+                    if meta.get('has_multi_year_data', False):
+                        score += 30.0
+                    
+                    # Medium priority: high metric density
+                    metric_density = meta.get('metric_density', 0.0)
+                    score += metric_density * 20.0
+                    
+                    # Low priority: table size (more rows = better)
+                    row_count = meta.get('table_row_count', 0)
+                    score += min(row_count * 0.5, 10.0)
+                    
+                    return score
+                
+                # Sort by priority score (descending)
+                contexts.sort(key=get_priority_score, reverse=True)
+                
+                # Log prioritization details for debugging
+                logger.info("Chunk prioritization (top 5):")
+                for i, ctx in enumerate(contexts[:5]):
+                    meta = ctx['metadata']
+                    logger.info(f"  Rank {i+1}: score={get_priority_score(ctx):.1f}, "
+                              f"table={meta.get('contains_financial_table', False)}, "
+                              f"multi_year={meta.get('has_multi_year_data', False)}, "
+                              f"density={meta.get('metric_density', 0.0):.2f}")
+            
+            # Extract just the documents
+            final_contexts = [ctx['document'] for ctx in contexts[:n_results * 2]]
+            
+            print(f"Retrieved {len(final_contexts)} context chunks for query: {query[:50]}...")
+            logger.info(f"Retrieved {len(final_contexts)} context chunks for query")
+            return final_contexts
             
         except Exception as e:
             logger.error(f"Error retrieving context: {e}")
+            return []
+    
+    def retrieve_table_chunks(self, query: str, chunk_type: str = "financial", 
+                            n_results: int = 5, only_financial_tables: bool = True) -> List[Dict[str, Any]]:
+        """
+        Retrieve chunks containing tables, prioritizing financial tables with multi-year data.
+        
+        Args:
+            query: Search query
+            chunk_type: Type of chunks to retrieve (default: 'financial')
+            n_results: Number of table chunks to retrieve
+            only_financial_tables: If True, only return chunks with financial tables
+        
+        Returns:
+            List of dictionaries containing chunk text and metadata
+        """
+        if not self.use_vector_db:
+            return []
+        
+        try:
+            # Get collection
+            collection_map = {
+                "financial": self.collections.get('financial_sections'),
+                "competitive": self.collections.get('competitive_sections'),
+                "ipo_specific": self.collections.get('ipo_sections'),
+                "general": self.collections.get('prospectus_chunks')
+            }
+            collection = collection_map.get(chunk_type)
+            if not collection:
+                logger.warning(f"Collection not found for chunk_type: {chunk_type}")
+                return []
+            
+            # Retrieve a much wider candidate pool before filtering for tables.
+            # A narrow pool (previously 3x) means a precisely-relevant but small
+            # table chunk can rank outside the initial semantic cut - e.g. on a
+            # 180-chunk document with two dozen financial-table chunks competing,
+            # the right chunk can easily rank #15 while only the top 9 get pulled
+            # for table-aware filtering below.
+            candidate_pool_size = max(n_results * 10, 30)
+            results = collection.query(
+                query_texts=[query],
+                n_results=min(candidate_pool_size, collection.count())
+            )
+
+            if not results or not results['documents'] or not results['metadatas']:
+                return []
+
+            docs = results['documents'][0]
+            metadatas = results['metadatas'][0]
+            # ChromaDB distances (lower = more semantically relevant). Normalize
+            # within this batch to a comparable 0-100 relevance score, since the
+            # absolute distance scale depends on the embedding model/metric.
+            distances = results.get('distances', [[]])[0] or [0.0] * len(docs)
+            min_dist, max_dist = min(distances), max(distances)
+            dist_range = max_dist - min_dist
+
+            # Filter and rank table chunks
+            table_chunks = []
+            for doc, metadata, dist in zip(docs, metadatas, distances):
+                # Apply filters
+                if only_financial_tables:
+                    if not metadata.get('contains_financial_table', False):
+                        continue
+                else:
+                    if not metadata.get('contains_table', False):
+                        continue
+
+                # Calculate ranking score - blend table structure quality with
+                # semantic relevance to the query. Structure alone (row count,
+                # density) previously let large, generic tables consistently
+                # outrank small, precisely-relevant ones like a compact summary
+                # table, regardless of how well they actually answered the query.
+                structure_score = 0.0
+                if metadata.get('contains_financial_table', False):
+                    structure_score += 100.0
+                if metadata.get('has_multi_year_data', False):
+                    structure_score += 50.0
+                structure_score += metadata.get('metric_density', 0.0) * 30.0
+                structure_score += metadata.get('table_row_count', 0) * 2.0
+
+                relevance_score = ((max_dist - dist) / dist_range * 100.0) if dist_range > 0 else 100.0
+                score = structure_score + relevance_score
+
+                table_chunks.append({
+                    'document': doc,
+                    'metadata': metadata,
+                    'score': score,
+                    'distance': dist
+                })
+
+            # Sort by score
+            table_chunks.sort(key=lambda x: x['score'], reverse=True)
+
+            # Return top N
+            result_chunks = table_chunks[:n_results]
+            
+            logger.info(f"Retrieved {len(result_chunks)} table chunks (from {len(results['documents'][0])} total)")
+            for i, chunk in enumerate(result_chunks[:3]):
+                logger.info(f"  Table chunk {i+1}: score={chunk['score']:.1f}, "
+                          f"rows={chunk['metadata'].get('table_row_count', 0)}, "
+                          f"years={chunk['metadata'].get('financial_years', 'N/A')}")
+            
+            return result_chunks
+            
+        except Exception as e:
+            logger.error(f"Error retrieving table chunks: {e}")
             return []
     
     def analyze_prospectus_comprehensive(self, 
@@ -655,6 +1315,7 @@ class LLMProspectusAnalyzer:
                                        pdf_path: str = None) -> Tuple[LLMFinancialMetrics, BenchmarkingAnalysis, IPOSpecificMetrics]:
         """
         Comprehensive LLM-powered analysis of IPO prospectus with vector DB enhancement.
+        Performs complete analysis including financial metrics, benchmarking, and IPO specifics.
         """
         logger.info(f"Starting comprehensive LLM analysis for {company_name}")
         logger.info(f"Using pdf text length: {len(pdf_text)} characters")
@@ -663,31 +1324,185 @@ class LLMProspectusAnalyzer:
         if self.use_vector_db and len(pdf_text) > 500:
             self.chunk_and_store_prospectus(pdf_text, company_name, sector)
         
-        # Split analysis into focused chunks for better accuracy
+        # Extract financial metrics with enhanced pattern detection
+        print("\n" + "=" * 80)
+        print("STEP 1/3: EXTRACTING FINANCIAL METRICS")
+        print("=" * 80)
         financial_metrics = self._extract_financial_metrics(pdf_text, company_name, pdf_path)
-        print("---Financial metrics---")
+        print("\n---Financial Metrics Extracted---")
         print(financial_metrics)
+        
+        # Perform benchmarking analysis with competitive context
+        print("\n" + "=" * 80)
+        print("STEP 2/3: PERFORMING BENCHMARKING ANALYSIS")
+        print("=" * 80)
         benchmarking = self._perform_benchmarking_analysis(pdf_text, company_name, sector, pdf_path)
+        print("\n---Benchmarking Analysis Complete---")
+        print(f"Market Position: {benchmarking.market_position}")
+        print(f"Competitive Advantages: {len(benchmarking.competitive_advantages)} identified")
+        print(f"Peer Companies: {len(benchmarking.peer_companies)} identified")
+        
+        # Analyze IPO-specific factors
+        print("\n" + "=" * 80)
+        print("STEP 3/3: ANALYZING IPO-SPECIFIC FACTORS")
+        print("=" * 80)
         ipo_specifics = self._analyze_ipo_specifics(pdf_text, company_name, pdf_path)
+        print("\n---IPO Analysis Complete---")
+        print(f"Pricing Analysis: {ipo_specifics.ipo_pricing_analysis.get('price_band', 'Not disclosed')}")
+        print(f"Use of Funds: {len(ipo_specifics.use_of_funds_analysis)} items")
+        
+        print("\n" + "=" * 80)
+        print("COMPREHENSIVE ANALYSIS COMPLETE")
+        print("=" * 80)
         
         return financial_metrics, benchmarking, ipo_specifics
     
     def _extract_financial_metrics(self, pdf_text: str, company_name: str, pdf_path: str = None) -> LLMFinancialMetrics:
         """Extract detailed financial metrics using LLM with vector context enhancement."""
         
-        # Get relevant financial context from vector DB
+        # Save prospectus text to context folder for debugging
+        self._save_context_chunks(
+            company_name=company_name,
+            context_type="prospectus_text",
+            content=pdf_text,
+            metadata={
+                "pdf_path": pdf_path or "N/A",
+                "text_length": len(pdf_text),
+                "analysis_type": "financial_metrics"
+            }
+        )
+        
+        # Get relevant financial context from vector DB using multi-query strategy
         financial_context = ""
         if self.use_vector_db:
-            print(f"Vector DB enabled, searching for context...")
-            context_chunks = self.retrieve_relevant_context(
-                f"financial data revenue profit EBITDA ratios {company_name}", 
-                chunk_type="financial", 
-                n_results=3
-            )
-            print(f"Retrieved {len(context_chunks)} context chunks from vector DB")
-            if context_chunks:
-                financial_context = f"\nRelevant financial context:\n" + "\n---\n".join(context_chunks)
-                print(f"Financial context length: {len(financial_context)}")
+            print(f"Vector DB enabled, using multi-query strategy for better retrieval...")
+            
+            # Define specialized queries targeting different financial statements
+            # Increased n_results to retrieve more context for investment thesis
+            specialized_queries = [
+                # Query 1: Target P&L Statement with specific keywords
+                {
+                    "query": f"restated statement profit loss revenue EBITDA PAT net profit FY lakhs crores {company_name}",
+                    "description": "P&L Statement",
+                    "n_results": 4  # Increased from 2 to 4
+                },
+                # Query 2: Target Key Financial Ratios table
+                {
+                    "query": f"key financial ratios ROE ROCE return equity debt equity current ratio {company_name}",
+                    "description": "Financial Ratios",
+                    "n_results": 5  # Widened from 3 - a precisely-relevant small table
+                    # was consistently ranking just outside a 3-result cutoff
+                },
+                # Query 3: Target Balance Sheet
+                {
+                    "query": f"restated balance sheet total assets liabilities equity reserves {company_name}",
+                    "description": "Balance Sheet",
+                    "n_results": 5  # Widened from 3 - a precisely-relevant small table
+                    # was consistently ranking just outside a 3-result cutoff
+                },
+                # Query 4: Target EBITDA specifically
+                {
+                    "query": f"EBITDA earnings before interest tax depreciation amortization operating profit {company_name}",
+                    "description": "EBITDA Data",
+                    "n_results": 5  # Widened from 3 - a precisely-relevant small table
+                    # was consistently ranking just outside a 3-result cutoff
+                },
+                # Query 5: Target Current Ratio and Liquidity metrics
+                {
+                    "query": f"current ratio liquidity current assets liabilities working capital quick ratio {company_name}",
+                    "description": "Liquidity Ratios",
+                    "n_results": 5  # Widened from 3 - a precisely-relevant small table
+                    # was consistently ranking just outside a 3-result cutoff
+                }
+            ]
+            
+            all_chunks = []
+            all_chunk_metadata = []
+            seen_hashes = set()  # For deduplication
+            
+            # Execute each specialized query
+            for query_info in specialized_queries:
+                query = query_info["query"]
+                description = query_info["description"]
+                n_results = query_info["n_results"]
+                
+                print(f"  Querying for {description}...")
+                
+                # Try to retrieve table chunks first (higher precision)
+                try:
+                    table_chunks = self.retrieve_table_chunks(
+                        query=query,
+                        chunk_type="financial",
+                        n_results=n_results,
+                        only_financial_tables=True
+                    )
+                    
+                    if table_chunks:
+                        print(f"    Found {len(table_chunks)} table chunks for {description}")
+                        for chunk_data in table_chunks:
+                            chunk_text = chunk_data['document']
+                            # Deduplicate using hash
+                            chunk_hash = hash(chunk_text)
+                            if chunk_hash not in seen_hashes:
+                                all_chunks.append(chunk_text)
+                                all_chunk_metadata.append({
+                                    "query": query,
+                                    "description": description,
+                                    "metadata": chunk_data['metadata']
+                                })
+                                seen_hashes.add(chunk_hash)
+                    else:
+                        # Fallback to regular retrieval if no table chunks found
+                        print(f"    No table chunks found, using regular retrieval...")
+                        regular_chunks = self.retrieve_relevant_context(
+                            query=query,
+                            chunk_type="financial",
+                            n_results=n_results,
+                            prioritize_tables=True
+                        )
+                        
+                        for chunk_text in regular_chunks:
+                            chunk_hash = hash(chunk_text)
+                            if chunk_hash not in seen_hashes:
+                                all_chunks.append(chunk_text)
+                                all_chunk_metadata.append({
+                                    "query": query,
+                                    "description": description,
+                                    "metadata": {"source": "regular_retrieval"}
+                                })
+                                seen_hashes.add(chunk_hash)
+                
+                except Exception as e:
+                    print(f"    Error retrieving {description}: {e}")
+                    continue
+            
+            print(f"Retrieved {len(all_chunks)} unique chunks across all queries")
+            
+            if all_chunks:
+                financial_context = f"\nRelevant financial context:\n" + "\n---\n".join(all_chunks)
+                print(f"Total financial context length: {len(financial_context)} characters")
+                
+                # Save retrieved chunks with detailed metadata
+                chunks_content = "\n\n".join([
+                    f"=== CHUNK {i+1} ({meta['description']}) ===\n"
+                    f"Query: {meta['query']}\n"
+                    f"Metadata: {meta['metadata']}\n\n{chunk}" 
+                    for i, (chunk, meta) in enumerate(zip(all_chunks, all_chunk_metadata))
+                ])
+                
+                self._save_context_chunks(
+                    company_name=company_name,
+                    context_type="retrieved_financial_chunks",
+                    content=chunks_content,
+                    metadata={
+                        "strategy": "multi_query_specialized",
+                        "queries": [q["query"] for q in specialized_queries],
+                        "total_queries": len(specialized_queries),
+                        "unique_chunks_retrieved": len(all_chunks),
+                        "total_length": len(financial_context),
+                        "deduplication": "enabled"
+                    }
+                )
             else:
                 print("No context chunks found - this is expected for first run")
         else:
@@ -699,13 +1514,39 @@ class LLMProspectusAnalyzer:
 {financial_context}
 
 ⚠️ CRITICAL ANTI-HALLUCINATION RULES:
-1. Extract ONLY metrics explicitly stated in the document - DO NOT calculate or infer values
-2. If a metric is not clearly stated, return null (not 0, not estimated)
-3. DO NOT use industry averages, benchmarks, or external knowledge
-4. DO NOT make assumptions about missing data
+1. Every number you use MUST come from this document - NEVER substitute industry
+   averages, benchmarks, typical ratios, or external knowledge for a missing value
+2. Fields marked "ONLY if explicitly stated" or "ONLY from document" below: use the
+   value exactly as stated. Do not derive or calculate these yourself.
+3. Fields marked "calculate" below (operating_profit_margin, return_on_equity,
+   debt_to_equity_ratio, revenue_growth_3yr, profit_growth_3yr, ebitda_growth_3yr)
+   are the ONE exception - compute them from raw figures explicitly present in the
+   document above (e.g. PAT, Net Worth, borrowings, or multi-year revenue/EBITDA/
+   profit rows), and return the arithmetic expression rather than a precomputed
+   number. If the required raw inputs aren't in the document, return null.
+4. If a metric is not clearly stated - or, for a "calculate" field, its required
+   raw inputs aren't present - return null (not 0, not estimated)
 5. If you see a range (e.g., "10-15%"), use the midpoint or note it in comments
 6. Set extraction_confidence based on data clarity (0.0-1.0)
 7. Set data_completeness based on how many fields have actual values (0.0-1.0)
+
+🔴 HIGH PRIORITY METRICS (extract these first if available):
+- current_ratio: Look for "Current Ratio" in financial ratios tables
+- quick_ratio: Look for "Quick Ratio" or "Liquidity Ratio" in tables
+- operating_profit_margin: Look for "EBITDA margin", "Operating Profit Margin", or calculate from EBITDA/Revenue if both present
+- debt_to_equity_ratio: Look for "Debt to Equity", "Debt/Equity", or "D/E Ratio" explicitly stated,
+  else calculate from (Current + Non-Current Borrowings) / Net Worth if both are in the P&L/balance sheet data
+- return_on_equity: Look for "ROE" or "Return on Equity" explicitly stated,
+  else calculate as (PAT / Net Worth) * 100 if both are in the P&L data
+- return_on_assets: Look for "ROA" or "Return on Assets"
+
+💡 EXTRACTION TIPS:
+- For EBITDA margin: Search for "EBITDA" in P&L tables and calculate (EBITDA/Revenue)*100
+- For ROE: PAT and Net Worth are usually in the same P&L/summary table - don't confuse
+  PAT or EPS with ROE, they are different figures
+- For current ratio: Look in "Key Financial Ratios" or "Liquidity Ratios" sections
+- For growth rates: Compare values across years (e.g., FY2023 vs FY2021) and calculate CAGR
+- Indian formats: Look for "Lakhs", "Crores" - these are already percentages or ratios
 
 CRITICAL: Respond with ONLY complete, valid JSON. No markdown, no explanations, no truncation.
 The JSON MUST end with both "extraction_confidence" and "data_completeness" fields and a closing brace.
@@ -721,23 +1562,28 @@ Required JSON structure (use exact field names):
     "price_to_book_ratio": "float, expression, or null - ONLY if explicitly stated",
     "price_to_sales_ratio": "float, expression, or null - ONLY if explicitly stated",
     "gross_profit_margin": "float, expression, or null (as percentage) - ONLY from document",
-    "operating_profit_margin": "float, expression, or null (as percentage) - ONLY from document",
+    "operating_profit_margin": "float, expression, or null (as percentage) - PRIORITY: use EBITDA margin if explicitly stated, else calculate from EBITDA/Revenue if both present",
     "net_profit_margin": "float, expression, or null (as percentage) - ONLY from document",
-    "return_on_equity": "float, expression, or null (as percentage) - ONLY from document",
-    "return_on_assets": "float, expression, or null (as percentage) - ONLY from document",
-    "current_ratio": "float, expression, or null - ONLY from document",
-    "quick_ratio": "float, expression, or null - ONLY from document",
-    "debt_to_equity_ratio": "float, expression, or null - ONLY from document",
+    "return_on_equity": "float, expression, or null (as percentage) - PRIORITY: use ROE if explicitly stated, else calculate as (PAT / Net Worth) * 100 if both present",
+    "return_on_assets": "float, expression, or null (as percentage) - PRIORITY: Look for ROA in ratios",
+    "current_ratio": "float, expression, or null - PRIORITY: Look in financial ratios table",
+    "quick_ratio": "float, expression, or null - PRIORITY: Look in financial ratios or liquidity section",
+    "debt_to_equity_ratio": "float, expression, or null - PRIORITY: use D/E ratio if explicitly stated, else calculate as (Current + Non-Current Borrowings) / Net Worth if both present",
     "debt_to_assets_ratio": "float, expression, or null - ONLY from document",
     "interest_coverage_ratio": "float, expression, or null - ONLY from document",
-    "revenue_growth_3yr": "float, expression, or null (as percentage) - ONLY from document",
-    "profit_growth_3yr": "float, expression, or null (as percentage) - ONLY from document",
-    "ebitda_growth_3yr": "float, expression, or null (as percentage) - ONLY from document",
+    "revenue_growth_3yr": "float, expression, or null (as percentage) - Calculate CAGR if multi-year data present",
+    "profit_growth_3yr": "float, expression, or null (as percentage) - Calculate CAGR if multi-year data present",
+    "ebitda_growth_3yr": "float, expression, or null (as percentage) - Calculate CAGR if EBITDA data present",
     "extraction_confidence": "0.0-1.0 based on data clarity and completeness",
     "data_completeness": "0.0-1.0 based on percentage of non-null fields"
 }}
 
-Example: "net_profit_margin": "(256.93 / 11884.89) * 100" will be evaluated to 2.16
+EXAMPLES:
+- "operating_profit_margin": "(1234.5 / 5678.9) * 100" for EBITDA margin
+- "current_ratio": "2.15" if stated in ratios table
+- "revenue_growth_3yr": "((11884.89 / 8523.45)^(1/2) - 1) * 100" for CAGR
+- "debt_to_equity_ratio": "0.45" if directly stated
+
 If data is unclear or not found, use null - NEVER make assumptions."""
         print("financial prompt: ", prompt)
         
@@ -836,16 +1682,67 @@ If data is unclear or not found, use null - NEVER make assumptions."""
     def _perform_benchmarking_analysis(self, pdf_text: str, company_name: str, sector: str, pdf_path: str = None) -> BenchmarkingAnalysis:
         """Perform benchmarking analysis using LLM with competitive context enhancement."""
         
-        # Get relevant competitive context from vector DB
+        # Get relevant competitive context from vector DB using multi-query strategy
         competitive_context = ""
         if self.use_vector_db:
-            context_chunks = self.retrieve_relevant_context(
-                f"competitive analysis market position {sector} competition {company_name}",
-                chunk_type="competitive",
-                n_results=5
-            )
-            if context_chunks:
-                competitive_context = f"\nRelevant competitive context:\n" + "\n---\n".join(context_chunks)
+            print(f"Using multi-query strategy for benchmarking analysis...")
+            
+            # Define specialized queries for competitive positioning
+            # Increased n_results to retrieve more context for investment thesis
+            specialized_queries = [
+                {
+                    "query": f"market share industry position {sector} competitors {company_name}",
+                    "description": "Market Position",
+                    "n_results": 5  # Widened from 3 - a precisely-relevant small table
+                    # was consistently ranking just outside a 3-result cutoff
+                },
+                {
+                    "query": f"competitive advantages unique selling proposition strengths {company_name}",
+                    "description": "Competitive Advantages",
+                    "n_results": 5  # Widened from 3 - a precisely-relevant small table
+                    # was consistently ranking just outside a 3-result cutoff
+                },
+                {
+                    "query": f"industry trends {sector} market dynamics outlook growth drivers",
+                    "description": "Industry Trends",
+                    "n_results": 5  # Widened from 3 - a precisely-relevant small table
+                    # was consistently ranking just outside a 3-result cutoff
+                }
+            ]
+            
+            all_chunks = []
+            seen_hashes = set()
+            
+            for query_info in specialized_queries:
+                query = query_info["query"]
+                description = query_info["description"]
+                n_results = query_info["n_results"]
+                
+                print(f"  Querying for {description}...")
+                
+                try:
+                    chunks = self.retrieve_relevant_context(
+                        query=query,
+                        chunk_type="competitive",
+                        n_results=n_results,
+                        prioritize_tables=False
+                    )
+                    
+                    if chunks:
+                        print(f"    Found {len(chunks)} chunks for {description}")
+                        for chunk_text in chunks:
+                            chunk_hash = hash(chunk_text)
+                            if chunk_hash not in seen_hashes:
+                                all_chunks.append(chunk_text)
+                                seen_hashes.add(chunk_hash)
+                except Exception as e:
+                    print(f"    Error retrieving {description}: {e}")
+                    continue
+            
+            print(f"Retrieved {len(all_chunks)} unique chunks for benchmarking")
+            
+            if all_chunks:
+                competitive_context = f"\nRelevant competitive context:\n" + "\n---\n".join(all_chunks)
         
         prompt = f"""
         Analyze competitive position of {company_name} in {sector} sector using ONLY the provided document.
@@ -935,16 +1832,69 @@ If data is unclear or not found, use null - NEVER make assumptions."""
     def _analyze_ipo_specifics(self, pdf_text: str, company_name: str, pdf_path: str = None) -> IPOSpecificMetrics:
         """Analyze IPO-specific factors using LLM with IPO context enhancement."""
         
-        # Get relevant IPO context from vector DB
+        # Get relevant IPO context from vector DB using multi-query strategy
         ipo_context = ""
         if self.use_vector_db:
-            context_chunks = self.retrieve_relevant_context(
-                f"IPO pricing underwriters fund utilization {company_name}",
-                chunk_type="ipo_specific", 
-                n_results=3
-            )
-            if context_chunks:
-                ipo_context = f"\nRelevant IPO context:\n" + "\n---\n".join(context_chunks)
+            print(f"Using multi-query strategy for IPO specifics...")
+            
+            # Define specialized queries targeting different IPO sections
+            # Increased n_results to retrieve more context for investment thesis
+            specialized_queries = [
+                {
+                    "query": f"objects issue IPO pricing price band valuation basis {company_name}",
+                    "description": "IPO Pricing",
+                    "n_results": 3  # NOTE: retrieve_relevant_context returns up to n_results*2
+                    # per query here (prioritize_tables=False), and this collection now
+                    # surfaces more real content since the ipo_specific classification
+                    # keywords were fixed - a wider n_results (tried 5) combined with
+                    # that meant 3 queries x n_results*2 pushed gpt-4's 8192-token
+                    # context over the limit and the whole extraction call failed.
+                },
+                {
+                    "query": f"objects issue utilization proceeds fund deployment working capital {company_name}",
+                    "description": "Use of Funds",
+                    "n_results": 3
+                },
+                {
+                    "query": f"book running lead managers underwriters merchant bankers {company_name}",
+                    "description": "Underwriters",
+                    "n_results": 3
+                }
+            ]
+            
+            all_chunks = []
+            seen_hashes = set()
+            
+            for query_info in specialized_queries:
+                query = query_info["query"]
+                description = query_info["description"]
+                n_results = query_info["n_results"]
+                
+                print(f"  Querying for {description}...")
+                
+                try:
+                    chunks = self.retrieve_relevant_context(
+                        query=query,
+                        chunk_type="ipo_specific",
+                        n_results=n_results,
+                        prioritize_tables=False
+                    )
+                    
+                    if chunks:
+                        print(f"    Found {len(chunks)} chunks for {description}")
+                        for chunk_text in chunks:
+                            chunk_hash = hash(chunk_text)
+                            if chunk_hash not in seen_hashes:
+                                all_chunks.append(chunk_text)
+                                seen_hashes.add(chunk_hash)
+                except Exception as e:
+                    print(f"    Error retrieving {description}: {e}")
+                    continue
+            
+            print(f"Retrieved {len(all_chunks)} unique chunks for IPO analysis")
+            
+            if all_chunks:
+                ipo_context = f"\nRelevant IPO context:\n" + "\n---\n".join(all_chunks)
         
         prompt = f"""
         Extract IPO information for {company_name} from the provided document ONLY.
@@ -1220,43 +2170,63 @@ If data is unclear or not found, use null - NEVER make assumptions."""
             web_context_section = f"\n\n{web_context}\n"
         
         prompt = f"""
-        Generate a detailed investment thesis for {company_name} based ONLY on the data provided below.
+        Generate a balanced, professional investment analysis for {company_name} based on the data provided below.
         
-        ⚠️ CRITICAL ANTI-HALLUCINATION RULES:
-        1. Use ONLY the data provided in this prompt - DO NOT make up or assume any information
-        2. If data is missing (null, N/A, or not provided), explicitly state "Data not available" or "Not disclosed"
-        3. DO NOT invent financial metrics, company details, or market information
-        4. DO NOT make claims about competitors, market share, or industry unless explicitly stated in the data
-        5. If you cannot make an assessment due to missing data, clearly state the limitation
-        6. Quote specific numbers from the provided data when making claims
+        ANALYSIS GUIDELINES:
+        • Base your assessment on the provided data and clearly indicate when data is unavailable
+        • Present both positive and negative aspects objectively
+        • Clearly distinguish between facts from the prospectus and reasonable interpretations
+        • When data is insufficient for a definitive assessment, acknowledge the limitation
+        • Use specific figures and metrics from the provided data to support your analysis
 
-        === INTERNAL ANALYSIS (From Prospectus) ===
+        === DATA SOURCES ===
         Financial Metrics: {json.dumps(metrics_dict, indent=2)}
         Benchmarking: {json.dumps(benchmark_dict, indent=2)}
         IPO Specifics: {json.dumps(ipo_dict, indent=2)}
         {web_context_section}
         
-        Generate a structured investment thesis covering:
+        Please provide a structured analysis covering:
 
-        1. EXECUTIVE SUMMARY (2-3 sentences using ONLY provided data)
-        2. KEY STRENGTHS (ONLY strengths explicitly mentioned or derivable from provided data - if limited data, acknowledge this)
-        3. KEY CONCERNS (ONLY concerns from provided data - clearly mark speculative risks as such)
-        4. VALUATION ASSESSMENT (ONLY if sufficient financial metrics are provided - otherwise state "Cannot assess due to insufficient data")
-        5. INVESTMENT RECOMMENDATION (Based ONLY on available data - if data is limited, recommend "Hold/Avoid pending more information")
-        6. RISK-REWARD ASSESSMENT (Based ONLY on provided data - explicitly note data gaps)
-        7. TARGET PRICE ESTIMATE (ONLY if valuation metrics are available - otherwise state "Cannot estimate")
-        8. MARKET CONTEXT (ONLY if web search context is provided above - summarize what was found, don't add external knowledge)
-        9. DATA QUALITY ASSESSMENT (Rate the completeness of available data: High/Medium/Low and list key missing metrics)
+        1. EXECUTIVE SUMMARY
+           - Brief overview of the company and IPO based on available data
+           - Key highlights (2-3 sentences)
 
-        CRITICAL: 
-        - Every claim must be traceable to the provided data
-        - Prefer "Data not available" over speculation
-        - Be explicit when making reasonable inferences vs. stating facts
-        - If web context contradicts or enhances prospectus data, note the discrepancy
+        2. BUSINESS FUNDAMENTALS
+           - Revenue trends and growth trajectory
+           - Profitability metrics and margin analysis
+           - Business model and competitive positioning (if disclosed)
+
+        3. FINANCIAL HEALTH
+           - Key financial ratios and their implications
+           - Debt levels and capital structure
+           - Working capital and liquidity position
+
+        4. IPO CHARACTERISTICS
+           - Use of proceeds and capital allocation plans
+           - Valuation metrics (P/E, P/B, etc.) if available
+           - Comparison with industry benchmarks
+
+        5. OPPORTUNITIES & RISKS
+           - Growth drivers and positive factors
+           - Challenges and concerns
+           - Key risk factors to monitor
+
+        6. MARKET CONTEXT
+           - Industry trends and competitive landscape (if web context available)
+           - Relevant market developments
+
+        7. INVESTMENT PERSPECTIVE
+           - Overall assessment based on available data
+           - Considerations for potential investors
+           - Note any significant data gaps that limit the analysis
+
+        TONE: Professional, objective, and balanced. Avoid overly bullish or bearish language.
+        FORMAT: Use clear headings and bullet points. Cite specific data points where relevant.
         """
         
         try:
-            thesis = self._call_llm(prompt, max_tokens=1200, temperature=0.2)
+            # Increased max_tokens from 1200 to 2000 to accommodate richer analysis from more chunks
+            thesis = self._call_llm(prompt, max_tokens=2000, temperature=0.2)
             return thesis if thesis else "Investment thesis generation failed."
             
         except Exception as e:
@@ -1444,7 +2414,7 @@ If data is unclear or not found, use null - NEVER make assumptions."""
         """Parse JSON with multiple fallback strategies and evaluate arithmetic expressions."""
         attempts = [
             ("Direct JSON extraction", lambda: self._extract_json_from_response(response)),
-            ("Fixed JSON", lambda: self._fix_json_issues(self._extract_json_from_response(response) or "")),
+            ("Fixed JSON", lambda: self._fix_json_issues(response)),
             ("Regex-based extraction", lambda: self._extract_json_regex_fallback(response)),
         ]
         
@@ -1595,7 +2565,7 @@ If data is unclear or not found, use null - NEVER make assumptions."""
                         partial_data[field_name] = None
                     else:
                         # Check if it's an expression
-                        if re.match(r'^[\d.\s+\-*/()]+$', value_str):
+                        if re.match(r'^[\d.\s+\-*/^()]+$', value_str):
                             try:
                                 # Try to evaluate as expression
                                 evaluated = safe_eval(value_str)
