@@ -13,6 +13,7 @@ from loguru import logger
 import requests
 import time
 import re
+from urllib.parse import urlparse
 from dotenv import load_dotenv
 
 # Load environment variables
@@ -34,506 +35,8 @@ except ImportError:
 # Add src to path
 sys.path.append(str(Path(__file__).parent / 'src'))
 
-from src.data_sources import DataSourceManager
-from src.analyzers import FinancialAnalyzer, SentimentAnalyzer, RiskAnalyzer, BusinessAnalyzer
-from src.models import IPOAnalysisReport, CompanyBasics, InvestmentRecommendation
-
-# Import enhanced analyzer if available
-try:
-    from src.analyzers import EnhancedFinancialAnalyzer
-    ENHANCED_ANALYZER_AVAILABLE = True
-except ImportError:
-    ENHANCED_ANALYZER_AVAILABLE = False
-
-# Import GMP extractor
-try:
-    from src.data_sources.llm_gmp_extractor import LLMGMPExtractor
-    from groq import Groq
-    GMP_EXTRACTOR_AVAILABLE = True
-except ImportError:
-    GMP_EXTRACTOR_AVAILABLE = False
-    logger.warning("GMP extractor not available")
-
-
-class IPOReviewAgent:
-    """Main IPO Review Agent class with LLM-powered analysis."""
-    
-    def __init__(self, use_llm: bool = True, llm_provider: str = "openai"):
-        self.data_manager = DataSourceManager()
-        self.sentiment_analyzer = SentimentAnalyzer()
-        self.risk_analyzer = RiskAnalyzer()
-        self.business_analyzer = BusinessAnalyzer()
-        
-        # Initialize financial analyzer (enhanced if available and requested)
-        if use_llm and ENHANCED_ANALYZER_AVAILABLE:
-            try:
-                self.financial_analyzer = EnhancedFinancialAnalyzer(llm_provider=llm_provider)
-                self.enhanced_analysis = True
-                logger.info("Enhanced LLM-powered financial analyzer initialized")
-            except Exception as e:
-                logger.warning(f"Failed to initialize enhanced analyzer: {e}")
-                self.financial_analyzer = FinancialAnalyzer()
-                self.enhanced_analysis = False
-        else:
-            self.financial_analyzer = FinancialAnalyzer()
-            self.enhanced_analysis = False
-    
-    def analyze_ipo(self, company_name: str, ipo_details: dict) -> IPOAnalysisReport:
-        """Perform comprehensive IPO analysis."""
-        logger.info(f"Starting IPO analysis for {company_name}")
-        
-        # For IPOs, we don't have stock symbols yet, so we collect limited data
-        raw_data = self.data_manager.collect_ipo_data(company_name, ipo_details)
-        print("Collected raw data", raw_data)
-        print("Collected raw data keys", raw_data.keys())
-        # Create company basics from IPO information
-        company = CompanyBasics(
-            name=company_name,
-            symbol="IPO-PENDING",  # Placeholder for IPO companies
-            sector=ipo_details.get('sector', 'Unknown'),
-            industry=ipo_details.get('sector', 'Unknown'),  # Use sector as industry for now
-            market_cap=self._estimate_market_cap(ipo_details),
-            employees=raw_data.get('employees'),
-            website=raw_data.get('website'),
-            description=raw_data.get('description')
-        )
-        
-        # Financial analysis - use enhanced analysis if available
-        if self.enhanced_analysis:
-            # Debug: Check what data we have
-            logger.info(f"Raw data keys: {list(raw_data.keys())}")
-            
-            # Extract prospectus text from enhanced_prospectus data
-            prospectus_text = raw_data.get('prospectus_text', '')
-            
-            # If no direct prospectus_text, try to extract from enhanced_prospectus
-            if not prospectus_text and 'enhanced_prospectus' in raw_data:
-                enhanced_data = raw_data['enhanced_prospectus']
-                if isinstance(enhanced_data, dict):
-                    # Try to extract text from various sections
-                    sections = []
-                    for key, value in enhanced_data.items():
-                        if isinstance(value, str) and len(value) > 50:  # Only meaningful text
-                            sections.append(f"{key.upper()}: {value}")
-                        elif isinstance(value, dict):
-                            for subkey, subvalue in value.items():
-                                if isinstance(subvalue, str) and len(subvalue) > 20:
-                                    sections.append(f"{key.upper()}/{subkey}: {subvalue}")
-                    
-                    if sections:
-                        prospectus_text = "\n\n".join(sections)
-                        logger.info(f"Extracted prospectus text from enhanced_prospectus data")
-            
-            # Also check prospectus_summary
-            if not prospectus_text and 'prospectus_summary' in raw_data:
-                prospectus_summary = raw_data['prospectus_summary']
-                if isinstance(prospectus_summary, str) and len(prospectus_summary) > 100:
-                    prospectus_text = prospectus_summary
-                    logger.info(f"Using prospectus_summary as text source")
-            
-            logger.info(f"Prospectus text length: {len(prospectus_text)}")
-            
-            try:
-                comprehensive_analysis = self.financial_analyzer.analyze_comprehensive(
-                    raw_data, company_name, ipo_details.get('sector', 'Unknown')
-                )
-                
-                enhanced_metrics = comprehensive_analysis.get('enhanced_metrics')
-                traditional_metrics = comprehensive_analysis.get('traditional_metrics')
-                
-                if enhanced_metrics:
-                    print("✅ Using enhanced LLM-powered financial metrics")
-                    financial_metrics = enhanced_metrics
-                elif traditional_metrics:
-                    print("⚠️ Using traditional financial metrics (LLM analysis failed or not available)")
-                    financial_metrics = traditional_metrics
-                else:
-                    print("❌ No financial metrics available (both enhanced and traditional failed)")
-                    financial_metrics = None
-                
-                # Store additional analysis results
-                raw_data['llm_analysis'] = comprehensive_analysis.get('llm_analysis', {})
-                raw_data['valuation_analysis'] = comprehensive_analysis.get('valuation_analysis', {})
-                raw_data['peer_analysis'] = comprehensive_analysis.get('peer_analysis', {})
-                raw_data['analysis_quality'] = comprehensive_analysis.get('analysis_quality', {})
-                
-                # Debug LLM analysis results
-                logger.info(f"LLM analysis keys: {list(raw_data['llm_analysis'].keys()) if raw_data['llm_analysis'] else 'No LLM analysis'}")
-                
-                if raw_data['llm_analysis']:
-                    llm_financial_metrics = raw_data['llm_analysis'].get('llm_financial_metrics')
-                    logger.info(f"LLM Financial Metrics extracted: {llm_financial_metrics is not None}")
-                    if llm_financial_metrics:
-                        logger.info(f"LLM Financial Metrics type: {type(llm_financial_metrics)}")
-                
-            except Exception as e:
-                logger.error(f"Enhanced analysis failed: {e}")
-                print(f"❌ Enhanced LLM analysis failed: {e}")
-                print("⚠️ Falling back to traditional financial analysis")
-                # Fallback to traditional analysis
-                financial_metrics = self.financial_analyzer.calculate_financial_metrics(
-                    raw_data.get('financial_statements', {})
-                )
-                # Add error info for debugging
-                raw_data['llm_analysis'] = {'error': str(e)}
-                raw_data['analysis_error'] = str(e)
-        else:
-            print("⚠️ Enhanced LLM analysis not enabled - using traditional financial analysis")
-            financial_metrics = self.financial_analyzer.calculate_financial_metrics(
-                raw_data.get('financial_statements', {})
-            )
-        
-        # News sentiment analysis
-        news_analysis = self.sentiment_analyzer.analyze_news_sentiment(
-            raw_data.get('company_news', []) + raw_data.get('market_news', [])
-        )
-        
-        # Risk assessment
-        company_info = {
-            'sector': ipo_details.get('sector', 'Unknown'),
-            'market_cap': self._estimate_market_cap(ipo_details),
-            'ipo_price_range': ipo_details.get('price_range', (100, 120)),
-            'exchange': ipo_details.get('exchange', 'NSE')
-        }
-        
-        risk_assessment = self.risk_analyzer.assess_risks(
-            financial_metrics, raw_data, news_analysis, company_info
-        )
-        
-        # Business analysis
-        strengths_weaknesses = self.business_analyzer.analyze_business_fundamentals(
-            company_info, financial_metrics, raw_data
-        )
-        
-        # Generate predictions and recommendations
-        listing_gain_prediction = self._predict_listing_gains(
-            financial_metrics, news_analysis, risk_assessment
-        )
-        
-        long_term_score = self._calculate_long_term_score(
-            financial_metrics, risk_assessment, strengths_weaknesses
-        )
-        
-        recommendation = self._generate_recommendation(
-            listing_gain_prediction, long_term_score, risk_assessment
-        )
-        
-        # Print summary of financial metrics used
-        if financial_metrics:
-            print("📋 Financial Metrics Summary:")
-            print(f"   Revenue Growth Rate: {'✅ Available' if financial_metrics.revenue_growth_rate is not None else '❌ Not Available'}")
-            print(f"   Profit Margin: {'✅ Available' if financial_metrics.profit_margin is not None else '❌ Not Available'}")
-            print(f"   ROE: {'✅ Available' if hasattr(financial_metrics, 'roe') and financial_metrics.roe is not None else '❌ Not Available'}")
-            print(f"   Current Ratio: {'✅ Available' if hasattr(financial_metrics, 'current_ratio') and financial_metrics.current_ratio is not None else '❌ Not Available'}")
-            print(f"   Debt to Equity: {'✅ Available' if hasattr(financial_metrics, 'debt_to_equity') and financial_metrics.debt_to_equity is not None else '❌ Not Available'}")
-        else:
-            print("❌ No financial metrics available!")
-        
-        print(f"📊 Final Analysis Results:")
-        print(f"   Listing Gain Prediction: {listing_gain_prediction:.1f}%")
-        print(f"   Long-term Score: {long_term_score:.1f}/10")
-        print(f"   Recommendation: {recommendation.value if recommendation else 'None'}")
-        
-        # Create analysis report
-        report = IPOAnalysisReport(
-            company=company,
-            financial_metrics=financial_metrics,
-            market_data={},
-            news_analysis=news_analysis,
-            risk_assessment=risk_assessment,
-            strengths_weaknesses=strengths_weaknesses,
-            listing_gain_prediction=listing_gain_prediction,
-            long_term_score=long_term_score,
-            recommendation=recommendation,
-            analyst_confidence=0.75  # Default confidence
-        )
-        
-        # Store raw_data with LLM analysis for display
-        report.raw_data = raw_data
-        
-        return report
-    
-    def analyze_gmp(self, company_name: str) -> dict:
-        """
-        Analyze GMP data using Brave Search and Groq LLM.
-        
-        Args:
-            company_name: Name of the company
-            
-        Returns:
-            Dictionary with GMP analysis results
-        """
-        if not GMP_EXTRACTOR_AVAILABLE:
-            return {
-                'status': 'error',
-                'message': 'GMP extractor not available'
-            }
-        
-        # Check API keys
-        groq_key = os.getenv('GROQ_API_KEY')
-        brave_key = os.getenv('BRAVE_API_KEY')
-        
-        if not groq_key or not brave_key:
-            return {
-                'status': 'error',
-                'message': 'GROQ_API_KEY and BRAVE_API_KEY required'
-            }
-        
-        try:
-            # Initialize extractor
-            extractor = LLMGMPExtractor(provider="groq", use_brave_search=True)
-            groq_client = Groq(api_key=groq_key)
-            
-            # Search and scrape
-            search_results = extractor.search_gmp_with_brave(company_name, max_results=5)
-            
-            if not search_results:
-                return {
-                    'status': 'not_found',
-                    'message': 'No search results found'
-                }
-            
-            # Scrape website content
-            scraped_chunks = []
-            for result in search_results[:3]:
-                url = result.get('url')
-                html_content = extractor.scrape_url_content(url)
-                
-                if html_content:
-                    text_content = extractor.extract_text_from_html(html_content)
-                    
-                    # Save scraped content
-                    extractor.save_scraped_content(
-                        company_name=company_name,
-                        url=url,
-                        html_content=html_content,
-                        text_content=text_content,
-                        folder="gmp_chunks"
-                    )
-                    
-                    # Limit chunk size
-                    max_chunk_size = 5000
-                    if len(text_content) > max_chunk_size:
-                        text_content = text_content[:max_chunk_size]
-                    
-                    scraped_chunks.append(f"Source: {url}\n{text_content}")
-            
-            if not scraped_chunks:
-                return {
-                    'status': 'not_found',
-                    'message': 'No content could be scraped'
-                }
-            
-            # Extract structured GMP data
-            result = extractor.extract_gmp_from_brave_results(
-                company_name=company_name,
-                search_results=search_results,
-                scrape_websites=False,
-                save_scraped=False
-            )
-            
-            # Generate comprehensive analysis
-            combined_context = "\n\n".join(scraped_chunks[:5])
-            analysis_prompt = f"""You are a financial analyst specializing in Indian IPO market analysis. Analyze the Grey Market Premium (GMP) data for {company_name} based on the following information:
-
-CONTEXT FROM WEB SOURCES:
-{combined_context}
-
-Please provide a comprehensive GMP analysis covering:
-
-1. **Current GMP Status**
-   - Current GMP price and percentage
-   - Issue price and expected listing price
-   - Whether GMP is positive, negative, or neutral
-
-2. **Market Sentiment Analysis**
-   - What does the GMP indicate about market demand?
-   - Is the IPO oversubscribed or undersubscribed?
-   - Investor confidence level
-
-3. **Listing Gain Potential**
-   - Expected listing gains based on GMP
-   - Risk-reward assessment
-   - Comparison with similar IPOs if mentioned
-
-4. **IPO Timeline & Status**
-   - Current IPO status (Open/Upcoming/Closed/Listed)
-   - Important dates (opening, closing, listing)
-   - Time-sensitive insights
-
-5. **Investment Recommendation**
-   - Should investors apply for this IPO?
-   - Grey market trends (rising/falling)
-   - Risk factors to consider
-
-6. **Key Takeaways**
-   - 3-5 bullet points summarizing the analysis
-   - Action items for potential investors
-
-Format the response in clear, professional language suitable for investment decision-making. Use ₹ symbol for prices and % for percentages. Be specific with numbers where available.
-
-If the context doesn't contain sufficient GMP data, clearly state what information is missing."""
-
-            response = groq_client.chat.completions.create(
-                model="llama-3.3-70b-versatile",
-                messages=[
-                    {
-                        "role": "system",
-                        "content": "You are an expert financial analyst specializing in Indian IPO markets and grey market premium analysis."
-                    },
-                    {
-                        "role": "user",
-                        "content": analysis_prompt
-                    }
-                ],
-                temperature=0.3,
-                max_tokens=2000
-            )
-            
-            analysis = response.choices[0].message.content
-            
-            # Save analysis to file
-            os.makedirs("gmp_chunks", exist_ok=True)
-            safe_name = re.sub(r'[^\w\s-]', '_', company_name)
-            timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
-            analysis_file = f"gmp_chunks/{safe_name}_analysis_{timestamp}.txt"
-            
-            with open(analysis_file, 'w', encoding='utf-8') as f:
-                f.write(f"GMP Analysis for {company_name}\n")
-                f.write(f"Generated: {datetime.now().isoformat()}\n")
-                f.write("="*80 + "\n\n")
-                
-                f.write("STRUCTURED DATA:\n")
-                f.write(f"  GMP Price: ₹{result.get('gmp_price', 'N/A')}\n")
-                f.write(f"  GMP %: {result.get('gmp_percentage', 'N/A')}%\n")
-                f.write(f"  Issue Price: ₹{result.get('issue_price', 'N/A')}\n")
-                f.write(f"  Expected Listing: ₹{result.get('expected_listing_price', 'N/A')}\n")
-                f.write(f"  IPO Status: {result.get('ipo_status', 'N/A')}\n")
-                f.write("\n" + "="*80 + "\n\n")
-                
-                f.write("COMPREHENSIVE ANALYSIS:\n")
-                f.write(analysis)
-                f.write("\n\n" + "="*80 + "\n")
-                f.write(f"Sources: {len(scraped_chunks)} websites scraped\n")
-                for i, result_item in enumerate(search_results[:3], 1):
-                    f.write(f"  {i}. {result_item['url']}\n")
-            
-            return {
-                'status': 'success',
-                'structured_data': result,
-                'analysis': analysis,
-                'sources': [r['url'] for r in search_results[:3]],
-                'file_saved': analysis_file
-            }
-            
-        except Exception as e:
-            logger.error(f"GMP analysis error: {e}")
-            return {
-                'status': 'error',
-                'message': str(e)
-            }
-    
-    def _predict_listing_gains(self, financial_metrics, news_analysis, risk_assessment) -> float:
-        """Predict potential listing gains percentage."""
-        base_gain = 10.0  # Base expected gain
-        print(f"📊 Calculating listing gains prediction with base gain: {base_gain}%")
-        
-        # Adjust based on financial performance
-        if financial_metrics.revenue_growth_rate:
-            print(f"✅ Using actual revenue growth rate: {financial_metrics.revenue_growth_rate:.1%}")
-            if financial_metrics.revenue_growth_rate > 0.2:
-                base_gain += 15
-                print(f"📈 High growth bonus: +15% (new total: {base_gain}%)")
-            elif financial_metrics.revenue_growth_rate < 0:
-                base_gain -= 20
-                print(f"📉 Negative growth penalty: -20% (new total: {base_gain}%)")
-        else:
-            print("⚠️ Revenue growth rate not available - using default base gain only")
-        
-        # Adjust based on sentiment
-        sentiment_multiplier = 1 + (news_analysis.sentiment_score * 0.3)
-        base_gain *= sentiment_multiplier
-        
-        # Adjust based on risk
-        if risk_assessment.overall_risk.value == "High":
-            base_gain *= 0.7
-        elif risk_assessment.overall_risk.value == "Low":
-            base_gain *= 1.3
-        
-        return max(-50, min(100, base_gain))  # Cap between -50% and 100%
-    
-    def _calculate_long_term_score(self, financial_metrics, risk_assessment, strengths_weaknesses) -> float:
-        """Calculate long-term investment score (0-10)."""
-        score = 5.0  # Base score
-        print(f"📊 Calculating long-term score with base score: {score}/10")
-        
-        # Financial factors
-        if financial_metrics.profit_margin and financial_metrics.profit_margin > 0.1:
-            score += 1.5
-            print(f"✅ High profit margin bonus: +1.5 (new score: {score:.1f}/10)")
-        elif financial_metrics.profit_margin and financial_metrics.profit_margin < 0:
-            score -= 2
-            print(f"❌ Negative profit margin penalty: -2.0 (new score: {score:.1f}/10)")
-        elif not financial_metrics.profit_margin:
-            print("⚠️ Profit margin not available - no adjustment made")
-        
-        if financial_metrics.revenue_growth_rate and financial_metrics.revenue_growth_rate > 0.15:
-            score += 1.5
-            print(f"✅ Strong revenue growth bonus: +1.5 (new score: {score:.1f}/10)")
-        elif not financial_metrics.revenue_growth_rate:
-            print("⚠️ Revenue growth rate not available - no growth bonus applied")
-        
-        # Risk factors
-        if risk_assessment.overall_risk.value == "Low":
-            score += 1
-        elif risk_assessment.overall_risk.value == "High":
-            score -= 1.5
-        elif risk_assessment.overall_risk.value == "Very High":
-            score -= 2.5
-        
-        # Business strengths
-        strength_bonus = min(len(strengths_weaknesses.strengths) * 0.3, 1.5)
-        weakness_penalty = min(len(strengths_weaknesses.weaknesses) * 0.2, 1.0)
-        score += strength_bonus - weakness_penalty
-        
-        return max(0, min(10, score))
-    
-    def _estimate_market_cap(self, ipo_details: dict) -> float:
-        """Estimate market cap based on IPO details."""
-        price_range = ipo_details.get('price_range', (100, 120))
-        
-        # Handle string format like "100-120" or tuple format
-        if isinstance(price_range, str):
-            try:
-                # Parse string format "100-120"
-                if '-' in price_range:
-                    min_price, max_price = map(float, price_range.split('-'))
-                    price_range = (min_price, max_price)
-                else:
-                    # Single price
-                    price = float(price_range)
-                    price_range = (price, price)
-            except (ValueError, AttributeError):
-                price_range = (100, 120)  # Default fallback
-        
-        avg_price = (price_range[0] + price_range[1]) / 2
-        
-        # Rough estimation based on typical IPO sizes in India
-        # This would ideally come from IPO prospectus data
-        estimated_shares = 10000000  # 1 crore shares (typical range)
-        
-        return avg_price * estimated_shares
-    
-    def _generate_recommendation(self, listing_gain, long_term_score, risk_assessment) -> InvestmentRecommendation:
-        """Generate investment recommendation."""
-        if long_term_score >= 8 and listing_gain > 20:
-            return InvestmentRecommendation.STRONG_BUY
-        elif long_term_score >= 6.5 and listing_gain > 10:
-            return InvestmentRecommendation.BUY
-        elif long_term_score >= 4 and risk_assessment.overall_risk.value != "Very High":
-            return InvestmentRecommendation.HOLD
-        else:
-            return InvestmentRecommendation.AVOID
+from src.models import IPOAnalysisReport
+from src.agent import IPOReviewAgent, GMP_EXTRACTOR_AVAILABLE
 
 
 def main():
@@ -544,9 +47,8 @@ def main():
         layout="wide"
     )
     
-    st.title("🚀 IPO Review Agent")
-    st.markdown("### 🇮🇳 Comprehensive Pre-IPO Analysis for Indian Stock Market")
-    # st.markdown("🎯 **Specialized for Pre-IPO Analysis using SEBI Draft Offer Documents**")
+    st.title("📊 IPO Review Agent")
+    st.caption("Pre-IPO analysis for the Indian market")
     
     # Create main navigation tabs
     tab1, tab2, tab3 = st.tabs(["🔍 IPO Analysis", "📄 SEBI Document Search", "ℹ️ About"])
@@ -670,14 +172,16 @@ def ipo_analysis_tab():
     if analyze_button and company_name:
         # Store GMP analysis result
         gmp_result = None
-        
+
+        # Single agent instance reused for both the GMP and full-analysis calls
+        agent = IPOReviewAgent(use_llm=use_llm_analysis, llm_provider=selected_llm_provider)
+
         # Run GMP analysis FIRST if enabled
         if use_gmp_analysis:
             with st.spinner(f"🔍 Analyzing GMP for {company_name}..."):
                 try:
-                    agent_temp = IPOReviewAgent(use_llm=False)
-                    gmp_result = agent_temp.analyze_gmp(company_name)
-                    
+                    gmp_result = agent.analyze_gmp(company_name)
+
                     if gmp_result and gmp_result.get('status') == 'success':
                         st.success("✅ GMP Analysis completed successfully!")
                     elif gmp_result and gmp_result.get('status') == 'not_found':
@@ -687,18 +191,15 @@ def ipo_analysis_tab():
                 except Exception as e:
                     st.error(f"❌ GMP Analysis error: {str(e)}")
                     logger.error(f"GMP analysis error: {e}")
-                
+
         # Run standard IPO analysis
         with st.spinner(f"🔄 Analyzing {company_name}..."):
             try:
-                # Initialize agent with LLM configuration
-                agent = IPOReviewAgent(use_llm=use_llm_analysis, llm_provider=selected_llm_provider)
-                
                 # Create IPO details dictionary - simplified for name-only analysis
                 ipo_details = {
                     'company_name': company_name
                 }
-                
+
                 # Perform analysis
                 report = agent.analyze_ipo(company_name, ipo_details)
                 
@@ -706,61 +207,45 @@ def ipo_analysis_tab():
                 display_analysis_report(report, gmp_result)
                 
             except Exception as e:
+                logger.exception(f"Analysis error for {company_name}: {e}")
                 st.error(f"❌ Analysis failed: {str(e)}")
-                logger.error(f"Analysis error: {e}")
-                # Add more detailed error information
-                st.error("**Debug Information:**")
-                st.error(f"- Error type: {type(e).__name__}")
-                st.error(f"- Error message: {str(e)}")
-                import traceback
-                st.error(f"- Full traceback: {traceback.format_exc()}")
+                st.info("Check the application logs for full error details.")
 
     else:
         # Welcome screen
-        col1, col2, col3 = st.columns(3)
-        
+        col1, col2 = st.columns(2)
+
         with col1:
             st.info("""
-            ### 🇮🇳 Indian IPO Analysis
-            - Company fundamentals review
-            - Industry benchmarking (Indian market)
-            - Sectoral growth analysis
-            - Financial health assessment
+            ### 📄 DRHP-Grounded Report
+            - Financial metrics extracted from the company's actual SEBI Draft Offer Document (P/E, margins, ROE/ROA, growth rates)
+            - Business, promoter, and risk analysis grounded in filed disclosures
+            - Financial health assessment and industry benchmarking
+            - Data-driven investment recommendation
             """)
-        
+
         with col2:
             st.info("""
-            ### 📊 Listing Predictions
-            - Listing day gains prediction
-            - Long-term investment scoring
-            - Price band analysis
-            - Market cap estimation
+            ### 💹 GMP Market Sentiment
+            - Live Grey Market Premium via Brave Search + Groq LLM
+            - Current GMP price, percentage, and estimated listing gain
+            - Narrative read on demand and grey market sentiment
+            - Runs alongside the DRHP report for a fuller picture
             """)
-        
-        with col3:
-            st.info("""
-            ### 📰 Market Intelligence
-            - News sentiment (Indian markets)
-            - NSE/BSE market trends
-            - Recent IPO performance
-            - Sector-specific insights
-            """)
-        
-        # Add information about Indian IPO market
+
+        # Add information about how the two features fit together
         st.markdown("---")
         st.markdown("""
-        ### 🎯 **Specialized for Indian Stock Market**
-        
-        This tool is designed specifically for analyzing **Indian IPOs** listing on **NSE** and **BSE**. 
-        
-        **Key Features:**
-        - 📈 Analysis without stock symbols (for pre-listing companies)
-        - 🏛️ Indian market benchmarks and sectoral analysis  
-        - 💹 Historical performance of recent Indian IPOs (Zomato, Paytm, Nykaa, etc.)
-        - 📰 India-focused market sentiment and news analysis
-        - ₹ INR-based pricing and market cap calculations
-        
-        **How to use:** Enter the company name to get comprehensive investment insights!
+        ### 🎯 **How It Works**
+
+        This tool combines two data sources for Indian pre-IPO companies:
+
+        1. 📄 **DRHP analysis** — the agent reads the company's Draft Red Herring Prospectus (find it via the **SEBI Document Search** tab) and uses an LLM to extract real financial figures and risk factors, not estimates.
+        2. 💹 **GMP sentiment** — in parallel, it searches for the current Grey Market Premium to gauge listing-day demand.
+
+        The two are combined into one report: fundamentals and risk from the DRHP, market sentiment from the GMP.
+
+        **How to use:** Enter the company name and click **Analyze IPO** to get both.
         """)
     
 def about_tab():
@@ -775,49 +260,48 @@ def about_tab():
     ## 🔍 Key Features
     - **SEBI Integration**: Direct search in SEBI Draft Offer Documents
     - **Pre-IPO Analysis**: Analyze companies before they go public
-    - **Real Financial Data**: Extract data from official DRHP documents
-    - **Risk Assessment**: Comprehensive risk analysis
-    - **Investment Recommendations**: Data-driven investment advice
-    
+    - **DRHP-Grounded Data**: Financial figures and risk factors extracted from official Draft Offer Documents, not estimates
+    - **GMP Market Sentiment**: Live Grey Market Premium via Brave Search + Groq LLM
+    - **Risk Assessment**: Comprehensive business, financial, and market risk analysis
+    - **Investment Recommendations**: Data-driven investment advice combining fundamentals and market sentiment
+
     ## 📊 How It Works
-    1. **Search SEBI**: Find companies in Draft Offer Documents section
-    2. **Extract Data**: Download and parse DRHP documents
-    3. **Analyze Financials**: Calculate ratios, growth rates, and metrics
+    1. **Search SEBI**: Find the company's Draft Offer Document in the SEBI Document Search tab
+    2. **Extract Financials**: An LLM reads the DRHP and extracts ratios, growth rates, and risk factors
+    3. **Check GMP**: In parallel, current Grey Market Premium is fetched for market sentiment
     4. **Assess Risk**: Evaluate business, financial, and market risks
-    5. **Generate Report**: Provide investment recommendation
-    
-    ## 🎯 Success Story: Vidya Wires Limited
-    - **Found**: Jan 16, 2025 filing in SEBI Draft Documents
-    - **Status**: Pre-IPO stage (perfect for analysis)
-    - **Data**: Real DRHP with complete financial statements
-    
+    5. **Generate Report**: Combine both into one investment recommendation
+
     ## 🔧 Technical Stack
-    - **Data Sources**: SEBI, Alpha Vantage, NewsAPI
-    - **Analysis**: Python, pandas, financial ratios
-    - **AI/ML**: Sentiment analysis, risk scoring
+    - **Data Sources**: SEBI Draft Offer Documents, Brave Search (GMP), Alpha Vantage, NewsAPI
+    - **Analysis**: LLM-powered financial extraction, Python/pandas ratio calculations
+    - **AI/ML**: LLM prospectus analysis (OpenAI/Anthropic/Groq/Gemini), Groq for GMP extraction
     - **Interface**: Streamlit web application
-    
+
     ## ⚡ Getting Started
     1. Go to **SEBI Document Search** tab
     2. Search for a company (e.g., "Vidya Wires")
     3. Download the DRHP document
     4. Run the IPO analysis
-    5. Get investment recommendation
-    
+    5. Get investment recommendation with DRHP fundamentals and GMP sentiment
+
     ## 🔑 API Configuration
     For full functionality, configure these API keys in `.env`:
-    
+
+    **GMP Analysis:**
+    - `GROQ_API_KEY` - Groq LLM for GMP extraction
+    - `BRAVE_API_KEY` - Brave Search for finding current GMP data
+
     **Basic Financial Data:**
     - `ALPHA_VANTAGE_API_KEY` - Financial data
     - `NEWS_API_KEY` - News sentiment analysis
-    - `GEMINI_API_KEY` or `OPENAI_API_KEY` - AI-powered analysis (optional)
-    
-    **Enhanced LLM Analysis (choose one or more):**
+
+    **Enhanced DRHP Analysis (choose one or more):**
     - `OPENAI_API_KEY` - OpenAI GPT-4 models
     - `ANTHROPIC_API_KEY` - Anthropic Claude models
-    - `GROQ_API_KEY` - Groq Mixtral models  
+    - `GROQ_API_KEY` - Groq Mixtral models
     - `GEMINI_API_KEY` - Google Gemini models
-    
+
     ## 📝 Disclaimer
     This tool is for educational and research purposes. Investment decisions should 
     always be made with professional financial advice and thorough due diligence.
@@ -828,21 +312,12 @@ def sebi_document_search_tab():
     st.header("📄 SEBI Draft Offer Documents Search")
     st.markdown("**Search for pre-IPO companies in SEBI Draft Offer Documents**")
     
-    # Key insight about data sources
-    st.success("""
-    🎯 **Correct Data Source Discovery!**
-    
-    **Previous approach:** ❌ Issues & Listing (completed IPOs, 2004-2016)
-    **Correct approach:** ✅ Draft Offer Documents (pre-IPO companies, current filings)
-    """)
-    
     st.info("""
     🔍 **Why SEBI Draft Documents?**
     - Find companies in **pre-IPO stage** (DRHP - Draft Red Herring Prospectus)
-    - Access **real financial data** from official SEBI filings
+    - Access **real financial data** from official SEBI filings, not estimates
     - Perfect timing for **investment analysis** before public launch
-    - **Current data**: 2024-2025 filings instead of historical data
-    - **Success example**: Vidya Wires Limited (Jan 16, 2025 filing)
+    - Reflects **current filings**, not historical completed listings
     """)
     
     # Search interface
@@ -1022,19 +497,34 @@ def search_sebi_documents(search_term):
         st.error(f"❌ Search failed: {str(e)}")
         st.info("🔧 **Manual Alternative:** Visit the SEBI website directly and search manually")
 
+SEBI_ALLOWED_HOST = "www.sebi.gov.in"
+
+
+def _is_sebi_url(url: str) -> bool:
+    """Only allow fetching URLs hosted on the official SEBI domain."""
+    try:
+        return urlparse(url).hostname == SEBI_ALLOWED_HOST
+    except ValueError:
+        return False
+
+
 def download_sebi_document(filing_url, company_name):
     """Download SEBI document from filing URL."""
     try:
+        if not _is_sebi_url(filing_url):
+            st.error("❌ Refusing to fetch a document from a non-SEBI URL")
+            return
+
         st.info(f"📥 Downloading document for {company_name}...")
-        
+
         # Extract PDF URL from filing page
         response = requests.get(filing_url)
-        
+
         if "sebi_data/attachdocs" in response.text:
             pdf_pattern = r'https://www\.sebi\.gov\.in/sebi_data/attachdocs/[^"]*\.pdf'
             pdf_urls = re.findall(pdf_pattern, response.text)
-            
-            if pdf_urls:
+
+            if pdf_urls and _is_sebi_url(pdf_urls[0]):
                 pdf_url = pdf_urls[0]
                 pdf_response = requests.get(pdf_url, stream=True)
                 
@@ -1059,326 +549,313 @@ def download_sebi_document(filing_url, company_name):
         st.error(f"❌ Download failed: {str(e)}")
 
 
+def _thesis_sections(thesis_text: str) -> dict:
+    """
+    Split the LLM-generated investment thesis into its numbered sections
+    (matches the "1. EXECUTIVE SUMMARY" / "2. BUSINESS FUNDAMENTALS" ...
+    template in generate_investment_thesis) so each part can be routed to the
+    right tab instead of rendered as one undifferentiated wall of text.
+    Falls back to a single section if the expected headers aren't found, so a
+    format drift in the LLM's output never silently hides content.
+    """
+    pattern = re.compile(r'^\**\s*(\d)\.\s*([A-Z][A-Z &/]+?)\**\s*$', re.MULTILINE)
+    matches = list(pattern.finditer(thesis_text))
+    if len(matches) < 2:
+        return {"Full Analysis": thesis_text.strip()}
+
+    sections = {}
+    for i, m in enumerate(matches):
+        title = m.group(2).strip().title()
+        start = m.end()
+        end = matches[i + 1].start() if i + 1 < len(matches) else len(thesis_text)
+        content = thesis_text[start:end].strip()
+        if content:
+            sections[title] = content
+    return sections
+
+
+def _section(sections: dict, *keywords: str) -> str:
+    """Find a thesis section whose title contains any of the given keywords."""
+    for title, content in sections.items():
+        if any(kw.lower() in title.lower() for kw in keywords):
+            return content
+    return ""
+
+
+# Recommendation label -> (emoji, Streamlit banner function). Buy-side
+# recommendations use the built-in "success" (green) styling, Hold uses
+# "warning" (amber), Avoid/Sell uses "error" (red) - reusing Streamlit's
+# semantic colors instead of custom CSS.
+RECOMMENDATION_STYLE = {
+    "Strong Buy": ("🟢", st.success),
+    "Buy": ("🟢", st.success),
+    "Hold": ("🟡", st.warning),
+    "Avoid": ("🔴", st.error),
+    "Strong Sell": ("🔴", st.error),
+}
+
+RISK_EMOJI = {"Low": "🟢", "Moderate": "🟡", "High": "🟠", "Very High": "🔴"}
+
+
 def display_analysis_report(report: IPOAnalysisReport, gmp_result: dict = None):
     """Display the enhanced analysis report with LLM insights and GMP analysis."""
-    
-    # Header with company info
-    st.header(f"📊 Enhanced Analysis Report: {report.company.name}")
-    
-    # Check if enhanced LLM analysis is available
+
+    st.header(f"📊 {report.company.name}")
+    if report.company.sector and report.company.sector != "Unknown":
+        st.caption(report.company.sector)
+
+    # Link back to the actual SEBI filing this analysis was built from, so the
+    # user can open the source DRHP and verify any number in this report themselves.
+    enhanced_prospectus = getattr(report, 'raw_data', {}).get('enhanced_prospectus')
+    source_url = getattr(enhanced_prospectus, 'source_url', None) if enhanced_prospectus else None
+    if source_url and _is_sebi_url(source_url):
+        st.markdown(f"📄 [View source DRHP on SEBI]({source_url})")
+    else:
+        st.caption(
+            "📄 Source DRHP link not available for this run — search "
+            "[SEBI Draft Offer Documents](https://www.sebi.gov.in/sebiweb/home/HomeAction.do?doListing=yes&sid=3&ssid=15&smid=10) "
+            f"for \"{report.company.name}\" to verify."
+        )
+
     llm_analysis = None
     if hasattr(report, 'raw_data') and 'llm_analysis' in getattr(report, 'raw_data', {}):
         llm_analysis = report.raw_data['llm_analysis']
-        st.success(f"🤖 **Enhanced with LLM-Powered Prospectus Analysis** (Provider: {llm_analysis.get('llm_provider', 'unknown').title()})")
-    
-    # 1. DISPLAY AI-GENERATED INVESTMENT THESIS FIRST
+
+    thesis_sections = {}
     if llm_analysis:
         investment_thesis = llm_analysis.get('llm_investment_thesis', '')
         if investment_thesis:
-            st.markdown("---")
-            with st.expander("🎯 AI-Generated Investment Thesis", expanded=True):
-                st.markdown(investment_thesis)
-    
-    # 2. DISPLAY GMP ANALYSIS SECOND
+            thesis_sections = _thesis_sections(investment_thesis)
+
+    gmp_percentage = None
     if gmp_result and gmp_result.get('status') == 'success':
+        gmp_percentage = gmp_result.get('structured_data', {}).get('gmp_percentage')
+
+    # ── Verdict bar: the agent's bottom-line call, up front ─────────────
+    if report.recommendation:
+        emoji, banner = RECOMMENDATION_STYLE.get(report.recommendation.value, ("⚪", st.info))
+        banner(f"### {emoji} {report.recommendation.value}")
+        st.caption(
+            "Algorithmic estimate based on available financial data and disclosed risk "
+            "factors - not a substitute for professional investment advice."
+        )
+
+    metric_specs = [
+        ("Long-Term Score", report.long_term_score, lambda v: f"{v:.1f}/10"),
+        ("Predicted Listing Gain", report.listing_gain_prediction, lambda v: f"{v:+.1f}%"),
+        (
+            "Overall Risk",
+            report.risk_assessment.overall_risk.value if report.risk_assessment else None,
+            lambda v: f"{RISK_EMOJI.get(v, '⚪')} {v}",
+        ),
+        ("GMP %", gmp_percentage, lambda v: f"{v}%"),
+        ("Analyst Confidence", report.analyst_confidence, lambda v: f"{v:.0%}"),
+    ]
+    available = [(label, fmt(value)) for label, value, fmt in metric_specs if value is not None]
+    if available:
+        cols = st.columns(len(available))
+        for col, (label, display_value) in zip(cols, available):
+            with col:
+                st.metric(label, display_value)
+
+    # ── Executive summary, always visible - no click required ──────────
+    exec_summary = _section(thesis_sections, "executive summary")
+    if exec_summary:
         st.markdown("---")
-        st.subheader("💹 Grey Market Premium (GMP) Analysis")
-        
-        # Display structured GMP data
-        structured_data = gmp_result.get('structured_data', {})
-        
-        col1, col2, col3, col4 = st.columns(4)
-        
-        with col1:
-            gmp_price = structured_data.get('gmp_price')
-            if gmp_price:
-                st.metric("GMP Price", f"₹{gmp_price}")
+        st.markdown(exec_summary)
+
+    st.markdown("---")
+
+    # ── Detail tabs instead of a long stack of expanders ────────────────
+    tabs = st.tabs([
+        "📋 Business & SWOT", "💰 Financials", "🏆 Market & Competitive",
+        "🎯 IPO Details", "⚠️ Risks & Outlook",
+    ])
+
+    with tabs[0]:
+        business_section = _section(thesis_sections, "business fundamentals")
+        if business_section:
+            st.markdown(business_section)
+        _display_swot(report.strengths_weaknesses)
+
+    with tabs[1]:
+        financial_section = _section(thesis_sections, "financial health")
+        if financial_section:
+            st.markdown(financial_section)
+        if llm_analysis:
+            llm_financial_metrics = llm_analysis.get('llm_financial_metrics')
+            if llm_financial_metrics:
+                st.markdown("#### Extracted Financial Ratios")
+                display_llm_financial_metrics(llm_financial_metrics)
+            elif llm_analysis.get('error'):
+                st.error(f"LLM Analysis Error: {llm_analysis['error']}")
             else:
-                st.metric("GMP Price", "N/A")
-        
-        with col2:
-            gmp_percentage = structured_data.get('gmp_percentage')
-            if gmp_percentage:
-                st.metric("GMP %", f"{gmp_percentage}%")
-            else:
-                st.metric("GMP %", "N/A")
-        
-        with col3:
-            issue_price = structured_data.get('issue_price')
-            if issue_price:
-                st.metric("Issue Price", f"₹{issue_price}")
-            else:
-                st.metric("Issue Price", "N/A")
-        
-        with col4:
-            expected_listing = structured_data.get('expected_listing_price')
-            if expected_listing:
-                st.metric("Expected Listing", f"₹{expected_listing}")
-            else:
-                st.metric("Expected Listing", "N/A")
-        
-        # Display comprehensive analysis
-        analysis_text = gmp_result.get('analysis', '')
-        if analysis_text:
-            with st.expander("📝 Comprehensive GMP Analysis", expanded=True):
-                st.markdown(analysis_text)
-        
-        # Display sources
-        sources = gmp_result.get('sources', [])
-        if sources:
-            with st.expander("🔗 Data Sources"):
-                for i, source in enumerate(sources, 1):
-                    st.write(f"{i}. {source}")
-        
-        # Show file save location
-        file_saved = gmp_result.get('file_saved')
-        if file_saved:
-            st.info(f"💾 Full analysis saved to: `{file_saved}`")
-    
-    # 3. DISPLAY ADVANCED FINANCIAL METRICS THIRD
-    if llm_analysis:
-        llm_financial_metrics = llm_analysis.get('llm_financial_metrics')
-        
-        if llm_financial_metrics:
+                st.caption("No LLM financial metrics extracted.")
+
+    with tabs[2]:
+        market_section = _section(thesis_sections, "market context")
+        if market_section:
+            st.markdown(market_section)
+        if llm_analysis:
+            llm_benchmarking = llm_analysis.get('llm_benchmarking')
+            if llm_benchmarking:
+                display_llm_benchmarking(llm_benchmarking)
+
+    with tabs[3]:
+        ipo_section = _section(thesis_sections, "ipo characteristics")
+        if ipo_section:
+            st.markdown(ipo_section)
+        _display_gmp(gmp_result)
+        if llm_analysis:
+            llm_ipo_specifics = llm_analysis.get('llm_ipo_specifics')
+            if llm_ipo_specifics:
+                display_llm_ipo_specifics(llm_ipo_specifics)
+
+    with tabs[4]:
+        risks_section = _section(thesis_sections, "opportunities", "risks")
+        if risks_section:
+            st.markdown(risks_section)
+        _display_risk_assessment(report.risk_assessment)
+        perspective = _section(thesis_sections, "investment perspective")
+        if perspective:
+            st.markdown("#### Investment Perspective")
+            st.markdown(perspective)
+
+    # Fallback: if section parsing found nothing usable anywhere above (e.g.
+    # the LLM's output didn't match the expected numbered-header format),
+    # show the raw thesis rather than silently dropping it.
+    if llm_analysis and list(thesis_sections.keys()) == ["Full Analysis"]:
+        with tabs[0]:
             st.markdown("---")
-            display_llm_financial_metrics(llm_financial_metrics)
-        else:
-            # Only show warning if LLM analysis was attempted
-            if llm_analysis:
-                st.markdown("---")
-                st.warning("⚠️ No LLM financial metrics extracted.")
-                
-                # Check for specific error information
-                if 'error' in llm_analysis:
-                    st.error(f"LLM Analysis Error: {llm_analysis['error']}")
-                
-                # Show available analysis components
-                available_components = [k for k in llm_analysis.keys() if llm_analysis[k]]
-                if available_components:
-                    st.info(f"✅ Available LLM Analysis Components: {', '.join(available_components)}")
-    
-    # 4. DISPLAY COMPETITIVE BENCHMARKING FOURTH
-    if llm_analysis:
-        llm_benchmarking = llm_analysis.get('llm_benchmarking')
-        if llm_benchmarking:
-            st.markdown("---")
-            display_llm_benchmarking(llm_benchmarking)
-        
-        # Display IPO Specifics (if available)
-        llm_ipo_specifics = llm_analysis.get('llm_ipo_specifics')
-        if llm_ipo_specifics:
-            st.markdown("---")
-            display_llm_ipo_specifics(llm_ipo_specifics)
-    
-    # col1, col2, col3, col4 = st.columns(4)
-    # with col1:
-    #     st.metric("Status", "🔄 IPO Pending")
-    # with col2:
-    #     st.metric("Sector", report.company.sector)
-    # with col3:
-    #     st.metric("Long-term Score", f"{report.long_term_score:.1f}/10")
-    # with col4:
-    #     if report.recommendation:
-    #         color = {
-    #             "Strong Buy": "🟢",
-    #             "Buy": "🔵", 
-    #             "Hold": "🟡",
-    #             "Avoid": "🔴",
-    #             "Strong Sell": "⚫"
-    #         }.get(report.recommendation.value, "⚪")
-    #         st.metric("Recommendation", f"{color} {report.recommendation.value}")
-    
-    # IPO specific metrics
-    # st.subheader("💰 IPO Details")
-    # col1, col2, col3 = st.columns(3)
-    
-    # with col1:
-    #     # Display price range if available in market_data
-    #     if hasattr(report, 'market_data') and report.market_data.get('ipo_price_range'):
-    #         price_range = report.market_data['ipo_price_range']
-    #         st.metric("Price Range", f"₹{price_range[0]:.0f} - ₹{price_range[1]:.0f}")
-    #     else:
-    #         st.metric("Price Range", "Not Available")
-    
-    # with col2:
-    #     if report.company.market_cap:
-    #         market_cap_cr = report.company.market_cap / 10000000  # Convert to crores
-    #         st.metric("Est. Market Cap", f"₹{market_cap_cr:.0f} Cr")
-    
-    # with col3:
-    #     st.metric("Exchange", "NSE & BSE")
-    
-    # Key metrics row
-    # st.subheader("📈 Key Financial Metrics")
-    # col1, col2, col3 = st.columns(3)
-    
-    # with col1:
-    #     if report.financial_metrics.revenue_growth_rate is not None:
-    #         print(f"✅ Using actual revenue growth rate: {report.financial_metrics.revenue_growth_rate:.1%}")
-    #         st.metric(
-    #             "Revenue Growth Rate", 
-    #             f"{report.financial_metrics.revenue_growth_rate:.1%}",
-    #             delta=f"{'📈' if report.financial_metrics.revenue_growth_rate > 0 else '📉'}"
-    #         )
-    #     else:
-    #         print("⚠️ Using default value for revenue growth rate: None/Not Available")
-    #         st.metric("Revenue Growth Rate", "Not Available")
-    
-    # with col2:
-    #     if report.financial_metrics.profit_margin is not None:
-    #         print(f"✅ Using actual profit margin: {report.financial_metrics.profit_margin:.1%}")
-    #         st.metric(
-    #             "Profit Margin", 
-    #             f"{report.financial_metrics.profit_margin:.1%}",
-    #             delta=f"{'💰' if report.financial_metrics.profit_margin > 0 else '💸'}"
-    #         )
-    #     else:
-    #         print("⚠️ Using default value for profit margin: None/Not Available")
-    #         st.metric("Profit Margin", "Not Available")
-    
-    # with col3:
-    #     if report.listing_gain_prediction is not None:
-    #         print(f"✅ Using calculated listing gain prediction: {report.listing_gain_prediction:.1f}%")
-    #         st.metric(
-    #             "Predicted Listing Gains", 
-    #             f"{report.listing_gain_prediction:.1f}%",
-    #             delta=f"{'🚀' if report.listing_gain_prediction > 0 else '📉'}"
-    #         )
-    #     else:
-    #         print("⚠️ Using default value for listing gain prediction: None/Not Available")
-    #         st.metric("Predicted Listing Gains", "Not Available")
-    
-    # # Risk Assessment
-    # st.subheader("⚠️ Risk Assessment")
-    # risk_colors = {
-    #     "Low": "🟢", "Moderate": "🟡", "High": "🔴", "Very High": "⚫"
-    # }
-    
-    # col1, col2, col3, col4 = st.columns(4)
-    # with col1:
-    #     st.write(f"**Overall Risk:** {risk_colors.get(report.risk_assessment.overall_risk.value, '⚪')} {report.risk_assessment.overall_risk.value}")
-    # with col2:
-    #     st.write(f"**Financial Risk:** {risk_colors.get(report.risk_assessment.financial_risk.value, '⚪')} {report.risk_assessment.financial_risk.value}")
-    # with col3:
-    #     st.write(f"**Market Risk:** {risk_colors.get(report.risk_assessment.market_risk.value, '⚪')} {report.risk_assessment.market_risk.value}")
-    # with col4:
-    #     st.write(f"**Operational Risk:** {risk_colors.get(report.risk_assessment.operational_risk.value, '⚪')} {report.risk_assessment.operational_risk.value}")
-    
-    # # Risk Factors
-    # if report.risk_assessment.risk_factors:
-    #     with st.expander("🔍 Risk Factors"):
-    #         for factor in report.risk_assessment.risk_factors:
-    #             st.write(f"• {factor}")
-    
-    # # Strengths and Weaknesses
-    # col1, col2 = st.columns(2)
-    
-    # with col1:
-    #     st.subheader("💪 Strengths")
-    #     if report.strengths_weaknesses.strengths:
-    #         for strength in report.strengths_weaknesses.strengths:
-    #             st.write(f"✅ {strength}")
-    #     else:
-    #         st.write("No specific strengths identified")
-    
-    # with col2:
-    #     st.subheader("⚠️ Weaknesses")
-    #     if report.strengths_weaknesses.weaknesses:
-    #         for weakness in report.strengths_weaknesses.weaknesses:
-    #             st.write(f"❌ {weakness}")
-    #     else:
-    #         st.write("No major weaknesses identified")
-    
-    # # News Sentiment
-    # st.subheader("📰 Market Sentiment Analysis")
-    # col1, col2 = st.columns(2)
-    
-    # with col1:
-    #     sentiment_score = report.news_analysis.sentiment_score
-    #     if sentiment_score > 0.1:
-    #         st.success(f"Positive Sentiment: {sentiment_score:.2f}")
-    #     elif sentiment_score < -0.1:
-    #         st.error(f"Negative Sentiment: {sentiment_score:.2f}")
-    #     else:
-    #         st.warning(f"Neutral Sentiment: {sentiment_score:.2f}")
-    
-    # with col2:
-    #     if report.news_analysis.key_themes:
-    #         st.write("**Key Themes:**")
-    #         for theme in report.news_analysis.key_themes[:5]:
-    #             st.write(f"• {theme.title()}")
-    
-    # # Company Description
-    # if report.company.description:
-    #     with st.expander("🏢 Company Description"):
-    #         st.write(report.company.description)
-    
-    # Analysis timestamp
+            with st.expander("Full AI-Generated Thesis (unparsed)", expanded=True):
+                st.markdown(thesis_sections["Full Analysis"])
+
+    st.markdown("---")
     st.caption(f"Analysis performed on: {report.analysis_date.strftime('%Y-%m-%d %H:%M:%S')}")
+
+
+def _display_gmp(gmp_result: dict = None):
+    """Display GMP metrics, narrative (if real data was found), and sources."""
+    if not gmp_result or gmp_result.get('status') != 'success':
+        return
+
+    st.markdown("#### 💹 Grey Market Premium (GMP)")
+
+    structured_data = gmp_result.get('structured_data', {})
+    metric_fields = [
+        ("GMP Price", structured_data.get('gmp_price'), lambda v: f"₹{v}"),
+        ("GMP %", structured_data.get('gmp_percentage'), lambda v: f"{v}%"),
+        ("Issue Price", structured_data.get('issue_price'), lambda v: f"₹{v}"),
+        ("Expected Listing", structured_data.get('expected_listing_price'), lambda v: f"₹{v}"),
+    ]
+    available_metrics = [(label, fmt(value)) for label, value, fmt in metric_fields if value]
+    has_gmp_data = bool(available_metrics)
+
+    if available_metrics:
+        cols = st.columns(len(available_metrics))
+        for col, (label, display_value) in zip(cols, available_metrics):
+            with col:
+                st.metric(label, display_value)
+
+    analysis_text = gmp_result.get('analysis', '')
+    if has_gmp_data and analysis_text:
+        with st.expander("📝 Comprehensive GMP Analysis", expanded=True):
+            st.markdown(analysis_text)
+
+    sources = gmp_result.get('sources', [])
+    if sources:
+        with st.expander("🔗 Data Sources", expanded=not has_gmp_data):
+            for i, source in enumerate(sources, 1):
+                st.write(f"{i}. {source}")
+    elif not has_gmp_data:
+        st.caption("No GMP data or sources found for this company.")
+
+
+def _display_swot(swot):
+    """Display the structured strengths/weaknesses/opportunities/threats analysis."""
+    if not swot or not any([swot.strengths, swot.weaknesses, swot.opportunities, swot.threats]):
+        return
+
+    st.markdown("#### SWOT Summary")
+    col1, col2 = st.columns(2)
+    with col1:
+        if swot.strengths:
+            st.markdown("**💪 Strengths**")
+            for s in swot.strengths:
+                st.write(f"✅ {s}")
+        if swot.opportunities:
+            st.markdown("**🚀 Opportunities**")
+            for o in swot.opportunities:
+                st.write(f"📈 {o}")
+    with col2:
+        if swot.weaknesses:
+            st.markdown("**⚠️ Weaknesses**")
+            for w in swot.weaknesses:
+                st.write(f"❌ {w}")
+        if swot.threats:
+            st.markdown("**🌩️ Threats**")
+            for t in swot.threats:
+                st.write(f"⚡ {t}")
+
+
+def _display_risk_assessment(risk_assessment):
+    """Display the structured risk assessment (overall/financial/market/operational)."""
+    if not risk_assessment:
+        return
+
+    st.markdown("#### Risk Breakdown")
+    cols = st.columns(4)
+    risk_items = [
+        ("Overall", risk_assessment.overall_risk),
+        ("Financial", risk_assessment.financial_risk),
+        ("Market", risk_assessment.market_risk),
+        ("Operational", risk_assessment.operational_risk),
+    ]
+    for col, (label, level) in zip(cols, risk_items):
+        with col:
+            level_label = level.value if level else "Unknown"
+            st.metric(label, f"{RISK_EMOJI.get(level_label, '⚪')} {level_label}")
+
+    if risk_assessment.risk_factors:
+        st.markdown("**Key Risk Factors**")
+        for factor in risk_assessment.risk_factors:
+            st.write(f"🔸 {factor}")
+
+    if risk_assessment.risk_mitigation:
+        st.markdown("**Risk Mitigation**")
+        for mitigation in risk_assessment.risk_mitigation:
+            st.write(f"🛡️ {mitigation}")
 
 
 def display_llm_financial_metrics(llm_financial_metrics):
     """Display advanced financial metrics extracted by LLM."""
     
-    with st.expander("📈 Advanced Financial Ratios (LLM Extracted)", expanded=False):
-        # st.subheader("Valuation Ratios")
-        # col1, col2, col3, col4 = st.columns(4)
-        
-        # with col1:
-        #     if hasattr(llm_financial_metrics, 'trailing_pe_ratio') and llm_financial_metrics.trailing_pe_ratio:
-        #         print(f"✅ LLM extracted P/E Ratio (Trailing): {llm_financial_metrics.trailing_pe_ratio:.2f}")
-        #         st.metric("P/E Ratio (Trailing)", f"{llm_financial_metrics.trailing_pe_ratio:.2f}")
-        #     else:
-        #         print("⚠️ Using default for P/E Ratio (Trailing): N/A - No data extracted by LLM")
-        #         st.metric("P/E Ratio (Trailing)", "N/A")
-        
-        # with col2:
-        #     if hasattr(llm_financial_metrics, 'price_to_book_ratio') and llm_financial_metrics.price_to_book_ratio:
-        #         print(f"✅ LLM extracted P/B Ratio: {llm_financial_metrics.price_to_book_ratio:.2f}")
-        #         st.metric("P/B Ratio", f"{llm_financial_metrics.price_to_book_ratio:.2f}")
-        #     else:
-        #         print("⚠️ Using default for P/B Ratio: N/A - No data extracted by LLM")
-        #         st.metric("P/B Ratio", "N/A")
-        
-        # with col3:
-        #     if hasattr(llm_financial_metrics, 'ev_to_ebitda_ratio') and llm_financial_metrics.ev_to_ebitda_ratio:
-        #         print(f"✅ LLM extracted EV/EBITDA: {llm_financial_metrics.ev_to_ebitda_ratio:.2f}")
-        #         st.metric("EV/EBITDA", f"{llm_financial_metrics.ev_to_ebitda_ratio:.2f}")
-        #     else:
-        #         print("⚠️ Using default for EV/EBITDA: N/A - No data extracted by LLM")
-        #         st.metric("EV/EBITDA", "N/A")
-        
-        # with col4:
-        #     if hasattr(llm_financial_metrics, 'price_to_sales_ratio') and llm_financial_metrics.price_to_sales_ratio:
-        #         print(f"✅ LLM extracted P/S Ratio: {llm_financial_metrics.price_to_sales_ratio:.2f}")
-        #         st.metric("P/S Ratio", f"{llm_financial_metrics.price_to_sales_ratio:.2f}")
-        #     else:
-        #         print("⚠️ Using default for P/S Ratio: N/A - No data extracted by LLM")
-        #         st.metric("P/S Ratio", "N/A")
-        
+    with st.expander("📈 Advanced Financial Ratios (LLM Extracted)", expanded=True):
         st.subheader("Profitability Ratios")
         col1, col2, col3 = st.columns(3)
         
         with col1:
             if hasattr(llm_financial_metrics, 'return_on_equity') and llm_financial_metrics.return_on_equity:
-                print(f"✅ LLM extracted Return on Equity: {llm_financial_metrics.return_on_equity:.2%}")
-                st.metric("Return on Equity", f"{llm_financial_metrics.return_on_equity:.2%}")
+                # return_on_equity is already a percentage value (e.g. 20.47 for
+                # 20.47%), not a fraction - ":.2%" would multiply it by 100 again
+                print(f"✅ LLM extracted Return on Equity: {llm_financial_metrics.return_on_equity:.2f}%")
+                st.metric("Return on Equity", f"{llm_financial_metrics.return_on_equity:.2f}%")
             else:
                 print("⚠️ Using default for Return on Equity: N/A - No data extracted by LLM")
                 st.metric("Return on Equity", "N/A")
         
         with col2:
             if hasattr(llm_financial_metrics, 'return_on_assets') and llm_financial_metrics.return_on_assets:
-                print(f"✅ LLM extracted Return on Assets: {llm_financial_metrics.return_on_assets:.2%}")
-                st.metric("Return on Assets", f"{llm_financial_metrics.return_on_assets:.2%}")
+                print(f"✅ LLM extracted Return on Assets: {llm_financial_metrics.return_on_assets:.2f}%")
+                st.metric("Return on Assets", f"{llm_financial_metrics.return_on_assets:.2f}%")
             else:
                 print("⚠️ Using default for Return on Assets: N/A - No data extracted by LLM")
                 st.metric("Return on Assets", "N/A")
         
         with col3:
             if hasattr(llm_financial_metrics, 'return_on_invested_capital') and llm_financial_metrics.return_on_invested_capital:
-                print(f"✅ LLM extracted ROIC: {llm_financial_metrics.return_on_invested_capital:.2%}")
-                st.metric("ROIC", f"{llm_financial_metrics.return_on_invested_capital:.2%}")
+                print(f"✅ LLM extracted ROIC: {llm_financial_metrics.return_on_invested_capital:.2f}%")
+                st.metric("ROIC", f"{llm_financial_metrics.return_on_invested_capital:.2f}%")
             else:
                 print("⚠️ Using default for ROIC: N/A - No data extracted by LLM")
                 st.metric("ROIC", "N/A")
@@ -1415,15 +892,15 @@ def display_llm_financial_metrics(llm_financial_metrics):
             
             with col1:
                 if hasattr(llm_financial_metrics, 'revenue_growth_3yr') and llm_financial_metrics.revenue_growth_3yr:
-                    st.metric("Revenue Growth (3Y)", f"{llm_financial_metrics.revenue_growth_3yr:.1%}")
-            
+                    st.metric("Revenue Growth (3Y)", f"{llm_financial_metrics.revenue_growth_3yr:.1f}%")
+
             with col2:
                 if hasattr(llm_financial_metrics, 'profit_growth_3yr') and llm_financial_metrics.profit_growth_3yr:
-                    st.metric("Profit Growth (3Y)", f"{llm_financial_metrics.profit_growth_3yr:.1%}")
-            
+                    st.metric("Profit Growth (3Y)", f"{llm_financial_metrics.profit_growth_3yr:.1f}%")
+
             with col3:
                 if hasattr(llm_financial_metrics, 'ebitda_growth_3yr') and llm_financial_metrics.ebitda_growth_3yr:
-                    st.metric("EBITDA Growth (3Y)", f"{llm_financial_metrics.ebitda_growth_3yr:.1%}")
+                    st.metric("EBITDA Growth (3Y)", f"{llm_financial_metrics.ebitda_growth_3yr:.1f}%")
         
         # Extraction Quality
         if hasattr(llm_financial_metrics, 'extraction_confidence') and llm_financial_metrics.extraction_confidence:
@@ -1433,7 +910,7 @@ def display_llm_financial_metrics(llm_financial_metrics):
 def display_llm_benchmarking(llm_benchmarking):
     """Display benchmarking analysis from LLM."""
     
-    with st.expander("🏆 Competitive Benchmarking Analysis", expanded=False):
+    with st.expander("🏆 Competitive Benchmarking Analysis", expanded=True):
         
         # Market Position
         if hasattr(llm_benchmarking, 'market_position') and llm_benchmarking.market_position:
@@ -1496,7 +973,7 @@ def display_llm_benchmarking(llm_benchmarking):
 def display_llm_ipo_specifics(llm_ipo_specifics):
     """Display IPO-specific analysis from LLM."""
     
-    with st.expander("🎯 IPO-Specific Analysis", expanded=False):
+    with st.expander("🎯 IPO-Specific Analysis", expanded=True):
         
         # IPO Pricing Analysis
         if hasattr(llm_ipo_specifics, 'ipo_pricing_analysis') and llm_ipo_specifics.ipo_pricing_analysis:
