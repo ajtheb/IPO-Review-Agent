@@ -76,17 +76,6 @@ def ipo_analysis_tab():
     with st.sidebar:
         st.header("📊 Analysis Parameters")
         
-        # Check for API keys
-        st.subheader("🔑 API Configuration")
-        alpha_key = os.getenv('ALPHA_VANTAGE_API_KEY')
-        news_key = os.getenv('NEWS_API_KEY')
-        
-        if not any([alpha_key, news_key]):
-            st.error("⚠️ No API keys configured. Please set up your .env file.")
-            st.info("Copy .env.example to .env and add your API keys.")
-        else:
-            st.success("✅ API keys configured")
-        
         # LLM Configuration
         st.subheader("🤖 LLM Configuration")
         
@@ -117,9 +106,15 @@ def ipo_analysis_tab():
                 "Google Gemini": "gemini"
             }
             
+            default_provider_index = (
+                available_providers.index("Groq Mixtral")
+                if "Groq Mixtral" in available_providers
+                else 0
+            )
             selected_provider_name = st.selectbox(
                 "Select LLM Provider",
                 available_providers,
+                index=default_provider_index,
                 help="Choose the LLM provider for enhanced prospectus analysis"
             )
             selected_llm_provider = provider_map[selected_provider_name]
@@ -148,7 +143,6 @@ def ipo_analysis_tab():
                 value=True,
                 help="Analyze Grey Market Premium using Brave Search and Groq LLM"
             )
-            st.success("✅ GMP Analysis available (Groq + Brave Search)")
         else:
             use_gmp_analysis = False
             if not GMP_EXTRACTOR_AVAILABLE:
@@ -161,7 +155,8 @@ def ipo_analysis_tab():
         # Company input - simplified to just company name
         st.subheader("🏢 Company Information")
         company_name = st.text_input(
-            "IPO/Company Name", 
+            "IPO/Company Name",
+            value="Aastha Spintex",
             placeholder="e.g., Zomato Limited, Paytm, Vidya Wires Limited",
             help="Enter the company name for comprehensive IPO analysis"
         )
