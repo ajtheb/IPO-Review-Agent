@@ -171,6 +171,40 @@ class LLMGMPExtractor:
             logger.error(f"Error searching with Brave API: {e}")
             return []
     
+    def extract_relevant_window(self, company_name: str, text: str, window_size: int = 8000) -> str:
+        """
+        Return a slice of text centered on the company's mention, instead of
+        blindly truncating from the start.
+
+        Aggregator pages (e.g. a table of every live IPO's GMP) can be tens of
+        thousands of characters long with the target company's row buried deep
+        in the middle. A head-truncation to `window_size` chars silently drops
+        the row we actually need before the LLM ever sees it.
+        """
+        text_lower = text.lower()
+        company_lower = company_name.lower()
+
+        idx = text_lower.find(company_lower)
+        if idx == -1:
+            # Fall back to keyword search for multi-word names
+            for kw in company_lower.split():
+                if len(kw) > 3:
+                    idx = text_lower.find(kw)
+                    if idx != -1:
+                        break
+
+        if idx == -1:
+            # Company not mentioned at all; head-truncation is as good as any.
+            return text[:window_size]
+
+        half = window_size // 2
+        start = max(0, idx - half)
+        end = min(len(text), start + window_size)
+        start = max(0, end - window_size)  # re-clamp if we hit the end
+        prefix = "..." if start > 0 else ""
+        suffix = "..." if end < len(text) else ""
+        return prefix + text[start:end] + suffix
+
     def scrape_url_content(self, url: str, timeout: int = 10) -> Optional[str]:
         """
         Scrape the HTML content from a URL.
@@ -347,10 +381,13 @@ class LLMGMPExtractor:
                                 chunks_folder
                             )
                         
-                        # Add to context with truncation for LLM processing
+                        # Keep the window of text around the company's mention
+                        # rather than blindly truncating from the start, so
+                        # the relevant row on a long aggregator page isn't
+                        # dropped before the LLM ever sees it.
                         max_length = 8000  # Limit per website to avoid token limits
                         if len(text_content) > max_length:
-                            text_content = text_content[:max_length] + "..."
+                            text_content = self.extract_relevant_window(company_name, text_content, max_length)
                         
                         scraped_contexts.append(f"\n--- Content from {url} ---\n{text_content}\n")
                         logger.info(f"Added {len(text_content)} characters from {url}")
@@ -547,13 +584,27 @@ class LLMGMPExtractor:
         
         return unique_relevant
     
+    def extract_gmp_from_text(self, company_name: str, context: str) -> Dict[str, Any]:
+        """
+        Extract structured GMP data directly from already-scraped text.
+
+        Use this when the caller has already fetched page content (e.g. via
+        `scrape_url_content`) and wants structured extraction on it, without
+        re-scraping or falling back to shallow search-result snippets.
+        """
+        return self._extract_with_llm(company_name, context)
+
     def _extract_with_llm(self, company_name: str, context: str) -> Dict[str, Any]:
         """Use LLM to extract GMP data from context."""
-        
+
+        # Window (not head-truncate) so a company mention buried past the
+        # first 8000 chars of a combined multi-source context isn't lost.
+        windowed_context = self.extract_relevant_window(company_name, context, 8000)
+
         prompt = f"""You are a financial data extraction expert. Extract Grey Market Premium (GMP) information for "{company_name}" from the following text.
 
 Text content:
-{context[:8000]}
+{windowed_context}
 
 Extract the following information if available:
 1. GMP Price (in ₹ or numeric value)
