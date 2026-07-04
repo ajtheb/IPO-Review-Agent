@@ -35,7 +35,7 @@ flask==3.0.0
 
 # Data processing
 beautifulsoup4==4.12.2
-lxml==4.9.3
+lxml==6.1.1
 
 # PDF processing for prospectus parsing
 PyPDF2==3.0.1
