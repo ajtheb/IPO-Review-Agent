@@ -1,0 +1,101 @@
+{
+  "company_name": "CSM Technologies Limited",
+  "sector": "Information Technology (GovTech)",
+  "source_note": "Hand-verified against the actual DRHP text in prospectus.txt (Draft Red Herring Prospectus, filed with SEBI on Sep 26, 2025 - a pre-IPO draft, price band not yet set). All amounts in ₹ lakhs unless noted. Every figure below was independently located in prospectus.txt via grep/read from the 'Summary of selected financial information derived from Restated Consolidated Financial Information' and 'Objects of the Issue' sections, not taken from any prior LLM extraction output. This fixture is deliberately picked because PAT is NOT monotonically increasing (it dipped FY23->FY24 before recovering FY24->FY25) - a good test of whether an extractor reports the real trend rather than assuming IPO-bound companies always show growth.",
+  "tolerance_pct": 3.0,
+  "financial_metrics": {
+    "revenue_by_year_inr_lakh": {
+      "FY2023": 16043.87,
+      "FY2024": 19671.05,
+      "FY2025": 19924.42
+    },
+    "pat_by_year_inr_lakh": {
+      "FY2023": 1582.40,
+      "FY2024": 1254.93,
+      "FY2025": 1408.65
+    },
+    "net_worth_by_year_inr_lakh": {
+      "FY2023": 5031.37,
+      "FY2024": 5974.70,
+      "FY2025": 7617.97
+    },
+    "eps_basic_diluted_by_year": {
+      "FY2023": 4.19,
+      "FY2024": 3.32,
+      "FY2025": 3.72
+    },
+    "net_asset_value_per_share_by_year": {
+      "FY2023": 79.89,
+      "FY2024": 94.87,
+      "FY2025": 118.73
+    },
+    "pat_margin_pct_by_year": {
+      "FY2023": 9.80,
+      "FY2024": 6.32,
+      "FY2025": 7.02
+    },
+    "total_borrowings_by_year_inr_lakh": {
+      "FY2023": 554.93,
+      "FY2024": 3003.88,
+      "FY2025": 3217.24
+    },
+    "revenue_growth_fy24_to_fy25_pct": 1.29,
+    "revenue_growth_fy23_to_fy24_pct": 22.61,
+    "revenue_growth_3yr_direction_positive": true,
+    "profit_growth_fy24_to_fy25_pct": 12.25,
+    "profit_growth_fy23_to_fy24_pct": -20.69,
+    "profit_growth_3yr_direction_positive": false,
+    "net_profit_margin_fy2025_pct": 7.02,
+    "net_profit_margin_fy2024_pct": 6.32,
+    "trailing_pe_ratio": null,
+    "forward_pe_ratio": null,
+    "price_to_book_ratio": null,
+    "ev_to_ebitda_ratio": null,
+    "return_on_equity_pct": null,
+    "current_ratio": null,
+    "debt_to_equity_ratio": null,
+    "_note_on_profit_direction": "PAT fell from Rs 1,582.40 lakh (FY2023) to Rs 1,254.93 lakh (FY2024), a -20.69% YoY decline, before recovering +12.25% to Rs 1,408.65 lakh in FY2025. The overall FY2023->FY2025 CAGR is still negative (~-5.65%, since FY2025 PAT remains below FY2023), which is why profit_growth_3yr_direction_positive is false here even though the most recent single year was a recovery - this is the opposite pattern from the other 4 fixtures in this benchmark, all of which grew every year.",
+    "_note_on_margin": "PAT Margin (%) is explicitly disclosed in the prospectus, defined as PAT/Revenue from Operations (not Total Income) - used directly rather than re-derived.",
+    "_note_on_nulls": "Valuation ratios (P/E, P/B, EV/EBITDA) are not computable pre-price-band. ROE/current ratio/debt-to-equity were not located as explicitly-stated computed values in the retrieved text - treated as unverifiable rather than guessed."
+  },
+  "ipo_specifics": {
+    "price_band_disclosed": false,
+    "issue_price_inr": null,
+    "fresh_issue_shares": 12901000,
+    "offer_for_sale": "Not Applicable - fresh issue only",
+    "use_of_funds_inr_lakh": [
+      {
+        "purpose": "Funding working capital requirements of our Company",
+        "amount": 5300.00
+      },
+      {
+        "purpose": "Prepayment or repayment of all or a portion of certain outstanding borrowings availed by our Company",
+        "amount": 2588.00
+      },
+      {
+        "purpose": "Achieving inorganic growth through unidentified acquisitions and other strategic initiatives and general corporate purposes",
+        "amount": null,
+        "note": "capped at 35% of Gross Proceeds; exact amount undisclosed pending Offer Price determination"
+      }
+    ],
+    "net_proceeds_disclosed": false,
+    "lead_managers": [
+      "Keynote Financial Services Limited"
+    ],
+    "registrar": "KFin Technologies Limited",
+    "promoter_shareholding_pct": {
+      "Priyadarshi Pany": 93.60,
+      "Lagna Panda": 0.0,
+      "total_promoters": 93.60,
+      "total_promoters_and_group": 94.90
+    }
+  },
+  "business_facts": {
+    "former_name": "Cybertech Software & Multimedia Private Limited",
+    "sector_focus": "GovTech / e-governance information technology solutions",
+    "registered_office_state": "Odisha",
+    "registered_office_city": "Bhubaneswar",
+    "financial_year_end": "March 31",
+    "face_value_per_share_inr": 10
+  }
+}

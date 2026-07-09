@@ -1,0 +1,97 @@
+{
+  "company_name": "Advit Jewels Limited",
+  "sector": "Jewellery (Kundan Polki, B2B manufacturing)",
+  "source_note": "Hand-verified against the actual DRHP text in prospectus.txt (Draft Red Herring Prospectus, Dated: September 30, 2025 - a pre-IPO draft, price band not yet set). All amounts in ₹ lakhs unless noted. Every figure below was independently located in prospectus.txt via grep/read from the 'Summary Derived from the Restated Financial Information' and 'Objects of the Issue' sections, not taken from any prior LLM extraction output.",
+  "tolerance_pct": 3.0,
+  "financial_metrics": {
+    "revenue_by_year_inr_lakh": {
+      "FY2023": 4660.41,
+      "FY2024": 6944.26,
+      "FY2025": 12493.73
+    },
+    "pat_by_year_inr_lakh": {
+      "FY2023": 1038.98,
+      "FY2024": 1471.04,
+      "FY2025": 2536.71
+    },
+    "net_worth_by_year_inr_lakh": {
+      "FY2023": 1807.82,
+      "FY2024": 3280.29,
+      "FY2025": 5813.42
+    },
+    "eps_basic_diluted_by_year": {
+      "FY2023": 3.25,
+      "FY2024": 4.60,
+      "FY2025": 7.92
+    },
+    "net_asset_value_per_share_by_year": {
+      "FY2023": 5.65,
+      "FY2024": 10.25,
+      "FY2025": 18.16
+    },
+    "total_borrowings_by_year_inr_lakh": {
+      "FY2023": 583.79,
+      "FY2024": 1969.51,
+      "FY2025": 7479.84
+    },
+    "revenue_growth_fy24_to_fy25_pct": 79.92,
+    "revenue_growth_fy23_to_fy24_pct": 49.01,
+    "revenue_growth_3yr_direction_positive": true,
+    "profit_growth_fy24_to_fy25_pct": 72.44,
+    "profit_growth_fy23_to_fy24_pct": 41.59,
+    "profit_growth_3yr_direction_positive": true,
+    "net_profit_margin_fy2025_pct": 20.30,
+    "net_profit_margin_fy2024_pct": 21.18,
+    "trailing_pe_ratio": null,
+    "forward_pe_ratio": null,
+    "price_to_book_ratio": null,
+    "ev_to_ebitda_ratio": null,
+    "return_on_equity_pct": null,
+    "current_ratio": null,
+    "debt_to_equity_ratio": null,
+    "_note_on_margin_denominator": "No separate 'Total Income' line is disclosed in the retrieved text - margin above is PAT/Revenue from Operations.",
+    "_note_on_nulls": "Valuation ratios (P/E, P/B, EV/EBITDA) are not computable pre-price-band. ROE/current ratio/debt-to-equity were not located as explicitly-stated computed values in the retrieved text - treated as unverifiable rather than guessed."
+  },
+  "ipo_specifics": {
+    "price_band_disclosed": false,
+    "issue_price_inr": null,
+    "fresh_issue_shares": 13800000,
+    "offer_for_sale": "NIL - fresh issue only",
+    "use_of_funds_inr_lakh": [
+      {
+        "purpose": "Funding incremental working capital requirements of our Company",
+        "amount": 6500.00
+      },
+      {
+        "purpose": "Repayment/pre-payment, in full or in part, of certain outstanding borrowings availed by Our Company from scheduled commercial banks",
+        "amount": 6500.00
+      },
+      {
+        "purpose": "General corporate purposes",
+        "amount": null,
+        "note": "capped at 25% of Gross Proceeds; exact amount undisclosed pending Issue Price determination"
+      }
+    ],
+    "net_proceeds_disclosed": false,
+    "lead_managers": [
+      "Holani Consultants Private Limited"
+    ],
+    "registrar": "Bigshare Services Private Limited",
+    "promoter_shareholding_pct": {
+      "Nitin Gilara": 24.90,
+      "Prateek Gilara": 24.90,
+      "Vipul Gilara": 24.90,
+      "Krishna Vardhan Gilara": 25.00,
+      "total_promoters": 99.70,
+      "total_promoters_and_group": 100.00
+    }
+  },
+  "business_facts": {
+    "products": "Kundan Polki jewellery",
+    "business_model": "B2B, serving dealers, showrooms, and family jewellers",
+    "manufacturing_facility_location": "A-5, Jamna Lal Bajaj Marg, C-Scheme, Jaipur, Rajasthan",
+    "negative_operating_cash_flow": "Negative net cash flow from operating activities in FY2023, FY2024 and FY2025 (Rs -277.35, -1,049.33, -3,697.69 lakh respectively) due to working-capital-intensive nature of the business",
+    "financial_year_end": "March 31",
+    "face_value_per_share_inr": 10
+  }
+}

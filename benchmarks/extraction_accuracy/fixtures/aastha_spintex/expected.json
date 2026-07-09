@@ -1,0 +1,101 @@
+{
+  "company_name": "Aastha Spintex Limited",
+  "sector": "Textiles (Cotton Yarn & Cotton Bales)",
+  "source_note": "Hand-verified against the actual DRHP text in prospectus.txt (Draft Red Herring Prospectus; Falcon Yarns Share Purchase Agreement cited dated September 22, 2025 - a pre-IPO draft, price band not yet set). All amounts in ₹ lakhs unless noted (note the unit differs from the Vidya Wires/Knack Packaging fixtures, which use ₹ million - a correct extractor should not silently misconvert units). Every figure below was independently located in prospectus.txt via grep/read from the 'Summary of selected financial information derived from our Restated Financial Information' and 'Objects of the Issue' / risk-factor sections, not taken from any prior LLM extraction output.",
+  "tolerance_pct": 3.0,
+  "financial_metrics": {
+    "revenue_from_operations_by_year_inr_lakh": {
+      "FY2023": 23926.50,
+      "FY2024": 30486.16,
+      "FY2025": 35116.02
+    },
+    "total_income_by_year_inr_lakh": {
+      "FY2023": 23969.22,
+      "FY2024": 30567.08,
+      "FY2025": 35217.06
+    },
+    "pat_by_year_inr_lakh": {
+      "FY2023": 105.83,
+      "FY2024": 1628.76,
+      "FY2025": 2349.83
+    },
+    "net_worth_by_year_inr_lakh": {
+      "FY2023": 6000.94,
+      "FY2024": 7637.83,
+      "FY2025": 12163.43
+    },
+    "eps_basic_diluted_by_year": {
+      "FY2023": 0.39,
+      "FY2024": 5.96,
+      "FY2025": 8.50
+    },
+    "net_asset_value_per_share_by_year": {
+      "FY2023": 21.97,
+      "FY2024": 27.97,
+      "FY2025": 44.01
+    },
+    "return_on_equity_pct_by_year": {
+      "FY2023": 1.78,
+      "FY2024": 23.88,
+      "FY2025": 23.73
+    },
+    "total_borrowings_by_year_inr_lakh": {
+      "FY2023": 8100.61,
+      "FY2024": 8285.92,
+      "FY2025": 9505.12
+    },
+    "revenue_growth_fy24_to_fy25_pct": 15.19,
+    "revenue_growth_fy23_to_fy24_pct": 27.42,
+    "revenue_growth_3yr_direction_positive": true,
+    "profit_growth_fy24_to_fy25_pct": 44.27,
+    "profit_growth_fy23_to_fy24_pct": 1439.00,
+    "profit_growth_3yr_direction_positive": true,
+    "net_profit_margin_fy2025_pct": 6.67,
+    "net_profit_margin_fy2024_pct": 5.33,
+    "trailing_pe_ratio": null,
+    "forward_pe_ratio": null,
+    "price_to_book_ratio": null,
+    "ev_to_ebitda_ratio": null,
+    "current_ratio": null,
+    "debt_to_equity_ratio": null,
+    "_note_on_profit_growth": "FY23->FY24 PAT growth of ~1439% is real, not a typo - FY2023 PAT (Rs 105.83 lakh) was unusually depressed, so the jump to Rs 1,628.76 lakh in FY2024 is a genuine low-base effect per the restated financials, not a fabrication risk to flag against the model.",
+    "_note_on_nulls": "Valuation ratios (P/E, P/B, EV/EBITDA) are not computable pre-price-band. Current ratio/debt-to-equity were not located as explicitly-stated computed values in the retrieved text - treated as unverifiable rather than guessed. Return on equity IS explicitly disclosed here (unlike the Vidya Wires/Knack Packaging fixtures) and is recorded above for manual review."
+  },
+  "ipo_specifics": {
+    "price_band_disclosed": false,
+    "issue_price_inr": null,
+    "fresh_issue_size_inr_lakh": 16000.00,
+    "use_of_funds_inr_lakh": [
+      {
+        "purpose": "Part payment of the purchase consideration for the acquisition of Falcon Yarns Private Limited",
+        "amount": 11151.00,
+        "note": "Balance tranche of the Rs 13,151 lakh total consideration under the Falcon SPA dated September 22, 2025, payable within 30 days of IPO completion; Rs 1,000 lakh of the total was already paid by September 20, 2025 and a further Rs 1,000 lakh falls due before January 1, 2026, per the risk factors section (no separate 'Objects' amount table with a Net Proceeds split was located in the retrieved text)."
+      },
+      {
+        "purpose": "General Corporate Purposes",
+        "amount": null
+      }
+    ],
+    "net_proceeds_disclosed": false,
+    "lead_managers": [
+      "BOI Merchant Bankers Limited",
+      "PNB Investment Services Limited"
+    ],
+    "promoter_shareholding_pct": {
+      "Patel Divyang Jashwantbhai": 17.91,
+      "Rasiklal Valjibhai Patel": 16.68,
+      "Gothi Vivek Rasiklal": 16.20,
+      "Jashwantbhai Valjibhai Patel": 14.43,
+      "total_promoters": 65.22,
+      "total_promoters_and_group": 74.23
+    }
+  },
+  "business_facts": {
+    "products": "Carded, combed, and compact combed cotton yarns, and cotton bales",
+    "manufacturing_facility_location": "Halvad, Morbi, Gujarat",
+    "key_customer_concentration": "7 Seas Impex (reseller) accounted for 33.88%, 54.73% and 66.61% of revenue from products in Fiscal 2025, 2024 and 2023 respectively",
+    "pending_acquisition": "Falcon Yarns Private Limited (100% equity, Share Purchase Agreement dated September 22, 2025)",
+    "financial_year_end": "March 31",
+    "face_value_per_share_inr": 10
+  }
+}

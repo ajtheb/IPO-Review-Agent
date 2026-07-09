@@ -1,0 +1,94 @@
+{
+  "company_name": "Knack Packaging Limited",
+  "sector": "Manufacturing (Packaging)",
+  "source_note": "Hand-verified against the actual DRHP text in prospectus.txt (Draft Red Herring Prospectus; auditors' certificate cited dated September 4, 2025 - a pre-IPO draft, price band not yet set). All amounts in ₹ million unless noted. Every figure below was independently located in prospectus.txt via grep/read from the 'Summary of Restated Consolidated Financial Information' and 'Objects of the Offer' sections (both within the first ~50 pages), not taken from any prior LLM extraction output. Fields marked null were not found stated in the available document text - a correct extractor should also return null/'not disclosed' rather than a fabricated value.",
+  "tolerance_pct": 3.0,
+  "financial_metrics": {
+    "revenue_by_year_inr_million": {
+      "FY2023": 5184.42,
+      "FY2024": 6545.59,
+      "FY2025": 7364.90
+    },
+    "pat_by_year_inr_million": {
+      "FY2023": 198.70,
+      "FY2024": 459.77,
+      "FY2025": 738.10
+    },
+    "net_worth_by_year_inr_million": {
+      "FY2023": 953.43,
+      "FY2024": 1406.22,
+      "FY2025": 2147.09
+    },
+    "eps_basic_diluted_by_year": {
+      "FY2023": 1.99,
+      "FY2024": 4.60,
+      "FY2025": 7.38
+    },
+    "net_asset_value_per_share_by_year": {
+      "FY2023": 9.53,
+      "FY2024": 14.06,
+      "FY2025": 21.47
+    },
+    "total_borrowings_by_year_inr_million": {
+      "FY2023": 1226.64,
+      "FY2024": 1730.93,
+      "FY2025": 1720.60
+    },
+    "revenue_growth_fy24_to_fy25_pct": 12.52,
+    "revenue_growth_fy23_to_fy24_pct": 26.26,
+    "revenue_growth_3yr_direction_positive": true,
+    "profit_growth_fy24_to_fy25_pct": 60.54,
+    "profit_growth_fy23_to_fy24_pct": 131.39,
+    "profit_growth_3yr_direction_positive": true,
+    "net_profit_margin_fy2025_pct": 10.02,
+    "net_profit_margin_fy2024_pct": 7.02,
+    "trailing_pe_ratio": null,
+    "forward_pe_ratio": null,
+    "price_to_book_ratio": null,
+    "ev_to_ebitda_ratio": null,
+    "return_on_equity_pct": null,
+    "current_ratio": null,
+    "debt_to_equity_ratio": null,
+    "_note_on_nulls": "Valuation ratios (P/E, P/B, EV/EBITDA) are not computable pre-price-band. ROE/current ratio/debt-to-equity were not located as explicitly-stated computed values in the retrieved text (unlike Aastha Spintex/CSM Technologies fixtures, where ROE is explicitly disclosed) - not confirmed present here, so treated as unverifiable rather than guessed.",
+    "_note_on_margin_denominator": "Total income (revenue + other income) is not separately disclosed in the retrieved text for this company, so net_profit_margin above is PAT/Revenue from Operations rather than PAT/Total income - a wider tolerance already accounts for this."
+  },
+  "ipo_specifics": {
+    "price_band_disclosed": false,
+    "issue_price_inr": null,
+    "gross_proceeds_fresh_issue_inr_million": 4750.00,
+    "use_of_funds_inr_million": [
+      {
+        "purpose": "Capital expenditure towards setting up of new manufacturing facility at Borisana, Kadi, Mehsana, Gujarat",
+        "amount": 4350.00
+      },
+      {
+        "purpose": "General corporate purposes",
+        "amount": null,
+        "note": "capped at 25% of Gross Proceeds per SEBI ICDR Regulations; exact amount undisclosed pending Offer Price determination"
+      }
+    ],
+    "net_proceeds_disclosed": false,
+    "lead_managers": [
+      "Systematix Corporate Services Limited",
+      "IDBI Capital Markets & Securities Limited",
+      "Pantomath Capital Advisors Private Limited"
+    ],
+    "registrar": "MUFG Intime India Private Limited (formerly Link Intime India Private Limited)",
+    "promoter_shareholding_pct": {
+      "Alpesh Tulsibhai Patel": 21.03,
+      "Pravinkumar Ambalal Patel": 11.20,
+      "Rashminbhai Tulsibhai Patel": 22.70,
+      "total_promoters": 54.92,
+      "total_promoters_and_group": 89.60,
+      "total_promoters_group_and_selling_shareholder": 95.00
+    }
+  },
+  "business_facts": {
+    "products": "PLWPP (Printed and Laminated Woven Polypropylene) bags and PLWPP Pinch Bottom bags",
+    "business_description": "Integrated, innovation-oriented, export-led packaging solutions provider",
+    "registered_office_state": "Gujarat",
+    "new_facility_location": "Borisana, Kadi, Mehsana, Gujarat",
+    "financial_year_end": "March 31",
+    "face_value_per_share_inr": 10
+  }
+}
