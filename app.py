@@ -44,12 +44,14 @@ def main():
     st.set_page_config(
         page_title="IPO Review Agent",
         page_icon="📈",
-        layout="wide"
+        layout="wide",
+        initial_sidebar_state="expanded"
     )
     
     st.title("📊 IPO Review Agent")
     st.caption("Pre-IPO analysis for the Indian market")
-    
+    st.caption("📱 On a phone? Tap the **›** arrow at the top-left to open Analysis Parameters and enter a company name.")
+
     # Create main navigation tabs
     tab1, tab2, tab3 = st.tabs(["🔍 IPO Analysis", "📄 SEBI Document Search", "ℹ️ About"])
     
