@@ -244,6 +244,17 @@ class IPOReviewAgent:
             listing_gain_prediction, long_term_score, risk_assessment
         )
 
+        # Self-check pass: review the assembled report for internal
+        # consistency (e.g. a Buy recommendation paired with Very High risk)
+        # before it's finalized.
+        reflection = raw_data.get('llm_analysis', {}).get('llm_reflection')
+        reflection_issues = reflection.issues if reflection is not None else []
+        consistency_check = self._self_check_report(
+            company, financial_metrics, risk_assessment, recommendation,
+            listing_gain_prediction, long_term_score, reflection_issues
+        )
+        raw_data['consistency_check'] = consistency_check
+
         # Log summary of financial metrics used
         if financial_metrics:
             logger.debug(
@@ -265,6 +276,9 @@ class IPOReviewAgent:
         )
 
         # Create analysis report
+        computed_confidence = consistency_check.get('confidence')
+        analyst_confidence = computed_confidence if computed_confidence is not None else 0.75
+
         report = IPOAnalysisReport(
             company=company,
             financial_metrics=financial_metrics,
@@ -275,7 +289,7 @@ class IPOReviewAgent:
             listing_gain_prediction=listing_gain_prediction,
             long_term_score=long_term_score,
             recommendation=recommendation,
-            analyst_confidence=0.75  # Default confidence
+            analyst_confidence=analyst_confidence  # from report self-check, falls back to 0.75
         )
 
         # Store raw_data with LLM analysis for display
@@ -588,3 +602,72 @@ class IPOReviewAgent:
             return InvestmentRecommendation.HOLD
         else:
             return InvestmentRecommendation.AVOID
+
+    def _self_check_report(self, company, financial_metrics, risk_assessment,
+                            recommendation, listing_gain_prediction, long_term_score,
+                            reflection_issues=None) -> dict:
+        """
+        One LLM pass reviewing the fully assembled report for internal
+        consistency (e.g. a Buy/Strong Buy recommendation paired with Very
+        High risk, or a positive listing-gain prediction alongside negative
+        revenue growth/profit margin) before it's shown to an investor.
+
+        Reuses the LLM client already configured on the enhanced financial
+        analyzer instead of creating a new one. Any failure - no LLM
+        analyzer available, empty response, unparseable JSON, exception -
+        degrades to a no-op result so the pipeline never breaks and
+        analyst_confidence falls back to its previous hardcoded default.
+        """
+        default = {'ran': False, 'consistent': True, 'issues': [], 'confidence': None}
+
+        llm_analyzer = getattr(self.financial_analyzer, 'llm_analyzer', None)
+        if not (self.enhanced_analysis and llm_analyzer):
+            return default
+
+        try:
+            summary = {
+                'company': company.name,
+                'sector': company.sector,
+                'recommendation': recommendation.value if recommendation else None,
+                'listing_gain_prediction_pct': listing_gain_prediction,
+                'long_term_score_of_10': long_term_score,
+                'overall_risk': risk_assessment.overall_risk.value if risk_assessment else None,
+                'risk_factors': risk_assessment.risk_factors if risk_assessment else [],
+                'revenue_growth_rate': getattr(financial_metrics, 'revenue_growth_rate', None),
+                'profit_margin': getattr(financial_metrics, 'profit_margin', None),
+                'debt_to_equity': getattr(financial_metrics, 'debt_to_equity', None),
+                'reflection_issues_from_extraction': reflection_issues or [],
+            }
+            prompt = (
+                "You are auditing a finished IPO analysis report for internal "
+                "consistency BEFORE it is shown to an investor. Report summary "
+                f"(JSON): {json.dumps(summary, default=str)}\n\n"
+                "Flag any INTERNAL CONTRADICTION between these fields - for example: "
+                "a Buy/Strong Buy recommendation paired with Very High overall risk; "
+                "a large positive listing_gain_prediction_pct alongside negative "
+                "revenue_growth_rate or negative profit_margin; a high long_term_score "
+                "alongside multiple severe risk_factors; or any of the "
+                "reflection_issues_from_extraction that would materially change the "
+                "recommendation if true. Do NOT re-derive the numbers yourself, only "
+                "check whether the fields already here are mutually consistent.\n\n"
+                "Respond with ONLY valid JSON, no markdown fences: "
+                '{"consistent": true/false, "issues": ["..."], "confidence": 0.0-1.0}'
+            )
+
+            response = llm_analyzer._call_llm(prompt, max_tokens=600, temperature=0.0)
+            if not response:
+                return default
+
+            data = llm_analyzer._parse_json_with_fallbacks(response, "report self-check")
+            if not data:
+                return default
+
+            return {
+                'ran': True,
+                'consistent': data.get('consistent', True),
+                'issues': data.get('issues', []),
+                'confidence': data.get('confidence'),
+            }
+        except Exception as e:
+            logger.warning(f"Report self-check failed, skipping: {e}")
+            return default

@@ -655,6 +655,25 @@ def display_analysis_report(report: IPOAnalysisReport, gmp_result: dict = None):
             with col:
                 st.metric(label, display_value)
 
+    # ── AI self-review: surface anything the agent's own reflection/
+    # consistency-check passes flagged, so a contradiction isn't silently
+    # buried in the numbers above ─────────────────────────────────────────
+    consistency_check = getattr(report, 'raw_data', {}).get('consistency_check') or {}
+    reflection = (llm_analysis or {}).get('llm_reflection')
+    callout_issues = list(consistency_check.get('issues', []))
+    if reflection is not None and getattr(reflection, 'issues', None):
+        callout_issues.extend(reflection.issues)
+    reflection_retries = getattr(reflection, 'iterations_used', 0) if reflection is not None else 0
+    if callout_issues or reflection_retries:
+        with st.expander(f"⚠️ {len(callout_issues)} consistency flag(s) from AI self-review", expanded=False):
+            if reflection_retries:
+                st.caption(
+                    f"The agent re-extracted financial metrics {reflection_retries} "
+                    f"time(s) after its own review flagged issues."
+                )
+            for issue in callout_issues:
+                st.write(f"- {issue}")
+
     # ── Executive summary, always visible - no click required ──────────
     exec_summary = _section(thesis_sections, "executive summary")
     if exec_summary:

@@ -205,6 +205,25 @@ class IPOSpecificMetrics:
     regulatory_compliance: Dict[str, Any]
 
 
+# Hard cap on how many extra financial-metrics re-extraction passes the STEP
+# 4/4 reflection loop may trigger, regardless of what the critique LLM
+# requests - bounds worst-case cost/latency even if the model keeps asking
+# for "just one more" retry.
+MAX_REFLECTION_RETRIES = 2
+
+
+@dataclass
+class ReflectionResult:
+    """Result of the post-extraction self-critique pass (STEP 4/4)."""
+    ran: bool = False
+    issues: List[str] = field(default_factory=list)
+    unsupported_fields: List[str] = field(default_factory=list)
+    corrected_fields: Dict[str, Any] = field(default_factory=dict)
+    confidence: Optional[float] = None
+    should_retry: bool = False
+    iterations_used: int = 0
+
+
 class LLMProspectusAnalyzer:
     """Advanced LLM-powered prospectus analyzer with vector DB support."""
     
@@ -1319,46 +1338,97 @@ class LLMProspectusAnalyzer:
         """
         logger.info(f"Starting comprehensive LLM analysis for {company_name}")
         logger.info(f"Using pdf text length: {len(pdf_text)} characters")
-        
+
         # Store document chunks in vector DB for future retrieval
         if self.use_vector_db and len(pdf_text) > 500:
             self.chunk_and_store_prospectus(pdf_text, company_name, sector)
-        
+
+        # Reset stashed retrieval contexts so a fresh run never sees stale
+        # context from a previous call on this same analyzer instance.
+        self._last_financial_context = ""
+        self._last_competitive_context = ""
+        self._last_ipo_context = ""
+        self._last_reflection = None
+
         # Extract financial metrics with enhanced pattern detection
         print("\n" + "=" * 80)
-        print("STEP 1/3: EXTRACTING FINANCIAL METRICS")
+        print("STEP 1/4: EXTRACTING FINANCIAL METRICS")
         print("=" * 80)
         financial_metrics = self._extract_financial_metrics(pdf_text, company_name, pdf_path)
         print("\n---Financial Metrics Extracted---")
         print(financial_metrics)
-        
+
         # Perform benchmarking analysis with competitive context
         print("\n" + "=" * 80)
-        print("STEP 2/3: PERFORMING BENCHMARKING ANALYSIS")
+        print("STEP 2/4: PERFORMING BENCHMARKING ANALYSIS")
         print("=" * 80)
         benchmarking = self._perform_benchmarking_analysis(pdf_text, company_name, sector, pdf_path)
         print("\n---Benchmarking Analysis Complete---")
         print(f"Market Position: {benchmarking.market_position}")
         print(f"Competitive Advantages: {len(benchmarking.competitive_advantages)} identified")
         print(f"Peer Companies: {len(benchmarking.peer_companies)} identified")
-        
+
         # Analyze IPO-specific factors
         print("\n" + "=" * 80)
-        print("STEP 3/3: ANALYZING IPO-SPECIFIC FACTORS")
+        print("STEP 3/4: ANALYZING IPO-SPECIFIC FACTORS")
         print("=" * 80)
         ipo_specifics = self._analyze_ipo_specifics(pdf_text, company_name, pdf_path)
         print("\n---IPO Analysis Complete---")
         print(f"Pricing Analysis: {ipo_specifics.ipo_pricing_analysis.get('price_band', 'Not disclosed')}")
         print(f"Use of Funds: {len(ipo_specifics.use_of_funds_analysis)} items")
-        
+
+        # Self-critique pass: re-check the three extractions above against
+        # their own source evidence and against each other, correcting or
+        # flagging anything that looks hallucinated or internally
+        # inconsistent before this analysis is returned. If the critique
+        # itself judges that a fresh financial-metrics extraction could fix
+        # what it found, loop back and try again - bounded by
+        # MAX_REFLECTION_RETRIES regardless of what the LLM keeps asking for.
+        print("\n" + "=" * 80)
+        print("STEP 4/4: SELF-CRITIQUE / REFLECTION PASS")
+        print("=" * 80)
+        attempt = 0
+        reflection = self._critique_extraction(
+            financial_metrics, benchmarking, ipo_specifics, company_name,
+            attempt=attempt, max_attempts=MAX_REFLECTION_RETRIES
+        )
+        while reflection.ran and reflection.should_retry and attempt < MAX_REFLECTION_RETRIES:
+            attempt += 1
+            print(f"Reflection requested a re-extraction - attempt {attempt}/{MAX_REFLECTION_RETRIES}")
+            print(f"Issues driving retry: {reflection.issues}")
+            financial_metrics = self._extract_financial_metrics(
+                pdf_text, company_name, pdf_path, feedback=reflection.issues
+            )
+            reflection = self._critique_extraction(
+                financial_metrics, benchmarking, ipo_specifics, company_name,
+                attempt=attempt, max_attempts=MAX_REFLECTION_RETRIES
+            )
+        reflection.iterations_used = attempt
+        self._last_reflection = reflection
+        if reflection.ran:
+            print(
+                f"Reflection complete after {attempt} retry(ies): "
+                f"{len(reflection.issues)} issue(s) flagged, confidence={reflection.confidence}"
+            )
+        else:
+            print("Reflection pass did not run (skipped or failed) - proceeding with original extraction")
+
         print("\n" + "=" * 80)
         print("COMPREHENSIVE ANALYSIS COMPLETE")
         print("=" * 80)
-        
+
         return financial_metrics, benchmarking, ipo_specifics
     
-    def _extract_financial_metrics(self, pdf_text: str, company_name: str, pdf_path: str = None) -> LLMFinancialMetrics:
-        """Extract detailed financial metrics using LLM with vector context enhancement."""
+    def _extract_financial_metrics(self, pdf_text: str, company_name: str, pdf_path: str = None,
+                                    feedback: Optional[List[str]] = None) -> LLMFinancialMetrics:
+        """
+        Extract detailed financial metrics using LLM with vector context enhancement.
+
+        `feedback`, when provided, is a list of issues the STEP 4/4 self-critique
+        pass flagged on a prior attempt (see analyze_prospectus_comprehensive's
+        reflection retry loop) - it's folded into the prompt so a re-extraction
+        attempt can specifically address what was wrong last time.
+        """
         
         # Save prospectus text to context folder for debugging
         self._save_context_chunks(
@@ -1508,11 +1578,26 @@ class LLMProspectusAnalyzer:
         else:
             print("Vector DB not enabled")
         print("financial_context: ", financial_context)
+        # Stash the retrieval context so the STEP 4/4 self-critique pass can
+        # check extracted values against the same evidence, without re-querying
+        # the vector DB.
+        self._last_financial_context = financial_context
+
+        feedback_block = ""
+        if feedback:
+            feedback_block = (
+                "\n⚠️ A PRIOR ATTEMPT AT THIS EXTRACTION WAS REVIEWED AND HAD ISSUES - "
+                "fix these specifically in this attempt, re-checking the document text "
+                "rather than repeating the same values:\n"
+                + "\n".join(f"- {issue}" for issue in feedback)
+                + "\n"
+            )
+
         # Create a more concise prompt to avoid truncation issues
         prompt = f"""Extract financial metrics for {company_name} from the document text ONLY.
 
 {financial_context}
-
+{feedback_block}
 ⚠️ CRITICAL ANTI-HALLUCINATION RULES:
 1. Every number you use MUST come from this document - NEVER substitute industry
    averages, benchmarks, typical ratios, or external knowledge for a missing value
@@ -1743,7 +1828,10 @@ If data is unclear or not found, use null - NEVER make assumptions."""
             
             if all_chunks:
                 competitive_context = f"\nRelevant competitive context:\n" + "\n---\n".join(all_chunks)
-        
+
+        # Stash for the STEP 4/4 self-critique pass.
+        self._last_competitive_context = competitive_context
+
         prompt = f"""
         Analyze competitive position of {company_name} in {sector} sector using ONLY the provided document.
 
@@ -1895,7 +1983,10 @@ If data is unclear or not found, use null - NEVER make assumptions."""
             
             if all_chunks:
                 ipo_context = f"\nRelevant IPO context:\n" + "\n---\n".join(all_chunks)
-        
+
+        # Stash for the STEP 4/4 self-critique pass.
+        self._last_ipo_context = ipo_context
+
         prompt = f"""
         Extract IPO information for {company_name} from the provided document ONLY.
 
@@ -2016,7 +2107,120 @@ If data is unclear or not found, use null - NEVER make assumptions."""
             growth_strategy_analysis={},
             regulatory_compliance={}
         )
-    
+
+    def _critique_extraction(self, financial_metrics: LLMFinancialMetrics,
+                              benchmarking: BenchmarkingAnalysis,
+                              ipo_specifics: IPOSpecificMetrics,
+                              company_name: str,
+                              attempt: int = 0,
+                              max_attempts: int = 0) -> ReflectionResult:
+        """
+        STEP 4/4: self-critique pass. Re-checks the three extractions above
+        against their own retrieval evidence and against each other, and
+        corrects/nulls out LLMFinancialMetrics fields the critique itself
+        can't support. BenchmarkingAnalysis/IPOSpecificMetrics are never
+        mutated (their fields are un-defaulted Dict[str, Any] consumed via
+        .get() throughout the UI - setting one to None would crash a caller);
+        issues found in those are only ever surfaced, never auto-corrected.
+
+        The LLM also decides `should_retry`: whether another financial-metrics
+        re-extraction pass (see the retry loop in
+        analyze_prospectus_comprehensive) would plausibly fix what it found.
+        `attempt`/`max_attempts` are passed through purely so the model knows
+        the remaining budget - the caller enforces the hard cap regardless.
+        """
+        default = ReflectionResult(ran=False)
+
+        financial_evidence = (self._last_financial_context or "")[:3000]
+        competitive_evidence = (self._last_competitive_context or "")[:1500]
+        ipo_evidence = (self._last_ipo_context or "")[:1500]
+
+        allowed_fields = sorted(LLMFinancialMetrics.__dataclass_fields__.keys())
+        budget_note = (
+            f"This is critique attempt {attempt + 1} of at most {max_attempts + 1}."
+            if max_attempts > 0 else ""
+        )
+
+        prompt = f"""You are auditing a completed IPO prospectus analysis for {company_name} for hallucinated or internally inconsistent figures, BEFORE it is shown to an investor. {budget_note}
+
+EXTRACTED FINANCIAL METRICS (JSON):
+{json.dumps(asdict(financial_metrics), default=str)}
+
+EXTRACTED BENCHMARKING (JSON):
+{json.dumps(asdict(benchmarking), default=str)}
+
+EXTRACTED IPO SPECIFICS (JSON):
+{json.dumps(asdict(ipo_specifics), default=str)}
+
+SOURCE EVIDENCE THE FINANCIAL METRICS WERE EXTRACTED FROM:
+{financial_evidence}
+
+SOURCE EVIDENCE THE BENCHMARKING WAS EXTRACTED FROM:
+{competitive_evidence}
+
+SOURCE EVIDENCE THE IPO SPECIFICS WERE EXTRACTED FROM:
+{ipo_evidence}
+
+Check for:
+1. Any non-null numeric field in EXTRACTED FINANCIAL METRICS that is NOT directly stated in, or simply derivable by arithmetic from, its source evidence above.
+2. Cross-artifact inconsistencies - e.g. return_on_equity or profit margins that contradict the IPO pricing narrative or the benchmarking market_position; a "leader" market_position paired with declining growth/margins.
+3. Any peer company or underwriter/lead-manager name in BENCHMARKING or IPO SPECIFICS that does not appear in its own source evidence.
+
+Respond with ONLY valid JSON, no markdown fences:
+{{
+    "issues": ["short description of each problem found - empty array if none"],
+    "unsupported_fields": ["financial metric field names not supported by evidence - empty array if none"],
+    "corrected_fields": {{"field_name": corrected_value_or_null}},
+    "confidence": 0.0-1.0,
+    "should_retry": true/false
+}}
+
+corrected_fields MUST only use keys from this exact list (financial metrics fields only): {allowed_fields}
+If everything checks out, return empty issues/unsupported_fields/corrected_fields and a high confidence.
+
+Set should_retry=true ONLY if there are specific financial-metrics issues that a fresh
+re-extraction over the SAME evidence could plausibly fix (e.g. a field was clearly
+present in the evidence but extracted wrong or left null). Set should_retry=false if
+there are no issues, if the only issues are in benchmarking/IPO specifics (those are
+not re-extracted by a retry), or if the evidence simply doesn't contain the missing
+data (retrying will not help)."""
+
+        try:
+            response = self._call_llm(prompt, max_tokens=1200, temperature=0.0)
+            if not response:
+                logger.warning(f"Self-critique pass returned no response for {company_name}, skipping")
+                return default
+
+            data = self._parse_json_with_fallbacks(response, "self-critique")
+            if not data:
+                logger.warning(f"Self-critique pass returned unparseable JSON for {company_name}, skipping")
+                return default
+
+            allowed_set = set(allowed_fields)
+            corrected_fields = {
+                k: v for k, v in (data.get("corrected_fields") or {}).items() if k in allowed_set
+            }
+
+            for field_name, value in corrected_fields.items():
+                setattr(financial_metrics, field_name, value)
+
+            confidence = data.get("confidence")
+            issues = data.get("issues") or []
+            if issues and confidence is not None and financial_metrics.extraction_confidence is not None:
+                financial_metrics.extraction_confidence = min(financial_metrics.extraction_confidence, confidence)
+
+            return ReflectionResult(
+                ran=True,
+                issues=issues,
+                unsupported_fields=data.get("unsupported_fields") or [],
+                corrected_fields=corrected_fields,
+                confidence=confidence,
+                should_retry=bool(data.get("should_retry", False)),
+            )
+        except Exception as e:
+            logger.warning(f"Self-critique pass failed for {company_name}, skipping: {e}")
+            return default
+
     def _call_llm(self, prompt: str, max_tokens: int = 1500, temperature: float = 0.1) -> Optional[str]:
         """Call the configured LLM with the given prompt."""
         
@@ -2983,13 +3187,17 @@ def integrate_llm_analysis(company_name: str, pdf_text: str, sector: str = "",
         similar_ipos = analyzer.find_similar_ipos(pdf_text[:500], sector)
         sector_insights = analyzer.get_sector_insights(sector)
         vector_db_stats = analyzer.get_vector_db_stats()
-    
+
+    # Self-critique result from STEP 4/4 (see analyze_prospectus_comprehensive)
+    reflection = getattr(analyzer, '_last_reflection', None)
+
     # Structure the results for integration
     return {
         'llm_financial_metrics': financial_metrics,
         'llm_benchmarking': benchmarking,
         'llm_ipo_specifics': ipo_specifics,
         'llm_investment_thesis': investment_thesis,
+        'llm_reflection': reflection,
         'llm_analysis_timestamp': datetime.now().isoformat(),
         'llm_provider': provider,
         'vector_db_enabled': analyzer.use_vector_db,
