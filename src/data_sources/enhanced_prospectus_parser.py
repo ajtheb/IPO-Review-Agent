@@ -707,7 +707,7 @@ class EnhancedProspectusParser:
         """Extract using pdfplumber with table detection."""
         text = ""
         with pdfplumber.open(pdf_path) as pdf:
-            for i, page in enumerate(pdf.pages[:50]):
+            for i, page in enumerate(pdf.pages):
                 # Extract regular text
                 page_text = page.extract_text() or ""
                 
@@ -727,7 +727,7 @@ class EnhancedProspectusParser:
         text = ""
         with open(pdf_path, 'rb') as file:
             pdf_reader = PyPDF2.PdfReader(file)
-            for page_num in range(min(50, len(pdf_reader.pages))):
+            for page_num in range(len(pdf_reader.pages)):
                 page = pdf_reader.pages[page_num]
                 text += page.extract_text() + "\n"
         
@@ -737,8 +737,7 @@ class EnhancedProspectusParser:
         """Extract tables using tabula-py."""
         try:
             import tabula
-            # Extract tables from first 20 pages
-            tables = tabula.read_pdf(pdf_path, pages='1-20', multiple_tables=True, silent=True)
+            tables = tabula.read_pdf(pdf_path, pages='all', multiple_tables=True, silent=True)
             
             text = ""
             for df in tables:

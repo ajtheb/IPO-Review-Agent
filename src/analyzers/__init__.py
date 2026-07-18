@@ -58,9 +58,10 @@ def _load_llm_analyzer():
 class EnhancedFinancialAnalyzer:
     """Enhanced financial analyzer with LLM-powered prospectus analysis."""
     
-    def __init__(self, llm_provider: str = "openai"):
+    def __init__(self, llm_provider: str = "openai", enable_reflection: bool = True):
         """Initialize enhanced analyzer with LLM integration."""
         self.llm_provider = llm_provider
+        self.enable_reflection = enable_reflection
         self.llm_analyzer = None
         
         # Lazy load LLM analyzer
@@ -135,7 +136,8 @@ class EnhancedFinancialAnalyzer:
                 
                 # Get comprehensive LLM analysis
                 llm_analysis = integrate_llm_analysis(
-                    company_name, prospectus_text, sector, self.llm_provider
+                    company_name, prospectus_text, sector, self.llm_provider,
+                    enable_reflection=self.enable_reflection
                 )
                 results['llm_analysis'] = llm_analysis
                 
@@ -171,7 +173,8 @@ class EnhancedFinancialAnalyzer:
                 # Create a simple context from available data
                 basic_context = self._create_basic_context(financial_data, company_name, sector)
                 llm_analysis = integrate_llm_analysis(
-                    company_name, basic_context, sector, self.llm_provider
+                    company_name, basic_context, sector, self.llm_provider,
+                    enable_reflection=self.enable_reflection
                 )
                 results['llm_analysis'] = llm_analysis
                 logger.info(f"Generated basic LLM analysis from available data")
@@ -236,30 +239,37 @@ class EnhancedFinancialAnalyzer:
             liabilities=traditional.liabilities
         )
         
-        # Override with LLM data where available and reliable
-        if llm_metrics.extraction_confidence and llm_metrics.extraction_confidence > 0.7:
-            
-            # Profitability ratios
+        # Override with LLM data where available and reliable.
+        # >= (not >) because self-critique caps confidence via min(original, critique_confidence)
+        # (see _critique_extraction), so a clean critique pass landing exactly on 0.7 was previously
+        # treated as "not reliable enough" and silently discarded an otherwise-good extraction.
+        if llm_metrics.extraction_confidence and llm_metrics.extraction_confidence >= 0.7:
+
+            # Profitability/growth ratios: the LLM extracts these as percentage-scale
+            # numbers (14.0 meaning 14%), but FinancialMetrics and its downstream
+            # consumers (agent.py's scoring thresholds, cli.py's ":.1%" formatting,
+            # the sector benchmarks below) all use fraction scale (0.14 meaning 14%).
+            # Divide by 100 here, once, so every consumer can keep assuming fractions.
             if llm_metrics.gross_profit_margin:
-                merged.gross_profit_margin = llm_metrics.gross_profit_margin
-            
+                merged.gross_profit_margin = llm_metrics.gross_profit_margin / 100
+
             if llm_metrics.net_profit_margin:
-                merged.profit_margin = llm_metrics.net_profit_margin
-            
+                merged.profit_margin = llm_metrics.net_profit_margin / 100
+
             if llm_metrics.return_on_equity:
-                merged.return_on_equity = llm_metrics.return_on_equity
-                
-            # Liquidity ratios
+                merged.return_on_equity = llm_metrics.return_on_equity / 100
+
+            # Liquidity ratios - true ratios (e.g. 2.15), not percentages, left as-is
             if llm_metrics.current_ratio:
                 merged.current_ratio = llm_metrics.current_ratio
-                
-            # Leverage ratios  
+
+            # Leverage ratios - true ratios (e.g. 1.29x), not percentages, left as-is
             if llm_metrics.debt_to_equity_ratio:
                 merged.debt_to_equity = llm_metrics.debt_to_equity_ratio
-                
-            # Growth metrics
+
+            # Growth metrics - percentage-scale from the LLM, convert to fraction
             if llm_metrics.revenue_growth_3yr:
-                merged.revenue_growth_rate = llm_metrics.revenue_growth_3yr
+                merged.revenue_growth_rate = llm_metrics.revenue_growth_3yr / 100
         
         return merged
     
@@ -336,22 +346,27 @@ class EnhancedFinancialAnalyzer:
             'key_concerns': benchmarking.competitive_disadvantages[:3]
         }
         
-        # Relative Performance vs Sector
+        # Relative Performance vs Sector.
+        # llm_metrics.net_profit_margin/return_on_equity are percentage-scale (e.g. 14.0
+        # meaning 14%) straight from the LLM, but industry_benchmarks values are fraction-scale
+        # (e.g. 0.15 meaning 15%) - same mismatch as _merge_financial_metrics, so convert here too.
         sector_benchmarks = self.industry_benchmarks.get(sector, {})
-        
+
         if llm_metrics.net_profit_margin and 'profit_margin' in sector_benchmarks:
-            margin_vs_sector = llm_metrics.net_profit_margin - sector_benchmarks['profit_margin']
+            company_margin = llm_metrics.net_profit_margin / 100
+            margin_vs_sector = company_margin - sector_benchmarks['profit_margin']
             peer_analysis['relative_performance']['profit_margin'] = {
-                'company': llm_metrics.net_profit_margin,
+                'company': company_margin,
                 'sector': sector_benchmarks['profit_margin'],
                 'difference': margin_vs_sector,
                 'assessment': 'Above Sector' if margin_vs_sector > 0.02 else 'Below Sector' if margin_vs_sector < -0.02 else 'In-line'
             }
-        
+
         if llm_metrics.return_on_equity and 'roe' in sector_benchmarks:
-            roe_vs_sector = llm_metrics.return_on_equity - sector_benchmarks['roe']
+            company_roe = llm_metrics.return_on_equity / 100
+            roe_vs_sector = company_roe - sector_benchmarks['roe']
             peer_analysis['relative_performance']['roe'] = {
-                'company': llm_metrics.return_on_equity,
+                'company': company_roe,
                 'sector': sector_benchmarks['roe'],
                 'difference': roe_vs_sector,
                 'assessment': 'Superior' if roe_vs_sector > 0.03 else 'Inferior' if roe_vs_sector < -0.03 else 'Average'
@@ -1235,13 +1250,17 @@ class BusinessAnalyzer:
         threats = []
         competitive_advantages = []
         
-        # Financial Strengths/Weaknesses
-        if financial_metrics.profit_margin and financial_metrics.profit_margin > 0.15:
+        # Financial Strengths/Weaknesses.
+        # Thresholds recalibrated down from 15%/20% - those bars only ever fired for
+        # exceptional companies, so realistic-but-solid Indian SME/mid-cap issuers
+        # (thin-to-moderate manufacturing margins, teens-percent growth) always came
+        # back with an empty strengths list regardless of how they actually performed.
+        if financial_metrics.profit_margin and financial_metrics.profit_margin > 0.08:
             strengths.append("Strong profit margins indicate efficient operations")
         elif financial_metrics.profit_margin and financial_metrics.profit_margin < 0:
             weaknesses.append("Negative profit margins")
-        
-        if financial_metrics.revenue_growth_rate and financial_metrics.revenue_growth_rate > 0.2:
+
+        if financial_metrics.revenue_growth_rate and financial_metrics.revenue_growth_rate > 0.15:
             strengths.append("High revenue growth rate")
             competitive_advantages.append("Strong market demand for products/services")
         elif financial_metrics.revenue_growth_rate and financial_metrics.revenue_growth_rate < 0:

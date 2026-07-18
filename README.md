@@ -2,6 +2,42 @@
 
 An intelligent IPO analysis system specifically designed for the **Indian stock market** (NSE & BSE). Provides comprehensive investment insights for companies planning to go public in India.
 
+## Chunking & Retrieval Pipeline
+
+Prospectus PDFs are chunked once, classified into topic-specific collections, and later retrieved per-analysis with table-aware ranking and near-duplicate filtering.
+
+### Chunking & Storage
+
+```mermaid
+flowchart TD
+    A[DRHP / Prospectus PDF] --> B["Full-document text extraction<br/>(pdfplumber to PyPDF2 to tabula, longest wins)"]
+    B --> C["Table-aware chunking<br/>(tables kept intact, never split mid-row)"]
+    C --> D{"Classify each chunk<br/>(keyword scoring, multi-label)"}
+    D -->|financial keywords| E[("financial_sections")]
+    D -->|competitive keywords| F[("competitive_sections")]
+    D -->|ipo-specific keywords| G[("ipo_sections")]
+    D -->|below threshold| H[("prospectus_chunks<br/>(general)")]
+```
+
+A chunk can clear more than one category's threshold (e.g. an "Objects of the Offer" table with profit figures) and gets stored in every matching collection, not just one.
+
+### Retrieval & Extraction
+
+```mermaid
+flowchart TD
+    A["Analysis request<br/>(financial / competitive / ipo-specific)"] --> B["Run several specialized queries<br/>against that domain's collection"]
+    B --> C{"Table chunks found?"}
+    C -->|yes| D["retrieve_table_chunks<br/>(rank: table structure + relevance score)"]
+    C -->|no| E["retrieve_relevant_context<br/>(fallback, table-prioritized)"]
+    D --> F["Near-duplicate filter<br/>(normalized text + numeric overlap + similarity ratio)"]
+    E --> F
+    F --> G[Aggregated unique chunks]
+    G --> H[LLM extraction prompt]
+    H --> I{"Self-critique pass<br/>(optional, STEP 4/4)"}
+    I -->|issues found, retries left| H
+    I -->|confidence acceptable| J[Final metrics / analysis]
+```
+
 ## Features
 
 ### 🤖 Intelligent Vector Search (NEW!)

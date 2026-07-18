@@ -191,7 +191,7 @@ class ProspectusParser:
         try:
             # Method 1: Use pdfplumber (better for tables)
             with pdfplumber.open(pdf_path) as pdf:
-                for page in pdf.pages[:50]:  # Limit to first 50 pages for performance
+                for page in pdf.pages:
                     page_text = page.extract_text()
                     if page_text:
                         text_content += page_text + "\n"
@@ -206,7 +206,7 @@ class ProspectusParser:
             # Method 2: Use PyPDF2 as fallback
             with open(pdf_path, 'rb') as file:
                 pdf_reader = PyPDF2.PdfReader(file)
-                for page_num in range(min(50, len(pdf_reader.pages))):
+                for page_num in range(len(pdf_reader.pages)):
                     page = pdf_reader.pages[page_num]
                     text_content += page.extract_text() + "\n"
             

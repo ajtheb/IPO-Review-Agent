@@ -35,10 +35,12 @@ sys.path.insert(0, str(REPO_ROOT))
 from dotenv import load_dotenv
 load_dotenv(REPO_ROOT / ".env")
 
+import copy
+
 from loguru import logger
 from src.agent import IPOReviewAgent
 from src.analyzers import RiskAnalyzer, BusinessAnalyzer
-from src.analyzers.llm_prospectus_analyzer import LLMProspectusAnalyzer
+from src.analyzers.llm_prospectus_analyzer import LLMProspectusAnalyzer, MAX_REFLECTION_RETRIES
 from src.models import NewsAnalysis
 
 BENCHMARK_DIR = Path(__file__).parent
@@ -359,17 +361,20 @@ def run_provider_on_fixture(provider, fixture_name, prospectus_text, expected):
         result["timings_sec"]["chunk_and_store"] = round(time.time() - t0, 1)
 
         t1 = time.time()
+        metrics = None
         try:
             metrics = analyzer._extract_financial_metrics(prospectus_text, company_name)
-            result["checks"].extend(score_financial_metrics(metrics, expected))
-            result["raw_financial_metrics"] = to_plain(metrics)
+            baseline_metrics = copy.deepcopy(metrics)
+            result["checks_before_reflection"] = score_financial_metrics(baseline_metrics, expected)
+            result["raw_financial_metrics_before_reflection"] = to_plain(baseline_metrics)
 
             try:
-                verdict_check, extracted_verdict, truth_verdict = score_final_verdict(metrics, expected)
-                result["checks"].append(verdict_check)
-                result["final_verdict"] = {"extracted": extracted_verdict, "ground_truth": truth_verdict}
+                verdict_check, extracted_verdict, truth_verdict = score_final_verdict(baseline_metrics, expected)
+                result["final_verdict_before_reflection"] = {
+                    "extracted": extracted_verdict, "ground_truth": truth_verdict
+                }
             except Exception as e:
-                result["errors"].append(f"score_final_verdict failed: {e}")
+                result["errors"].append(f"score_final_verdict (before reflection) failed: {e}")
         except Exception as e:
             result["errors"].append(f"_extract_financial_metrics failed: {e}")
         result["timings_sec"]["financial_metrics"] = round(time.time() - t1, 1)
@@ -380,6 +385,7 @@ def run_provider_on_fixture(provider, fixture_name, prospectus_text, expected):
             result["checks"].extend(score_ipo_specifics(ipo_specifics, expected))
             result["raw_ipo_specifics"] = to_plain(ipo_specifics)
         except Exception as e:
+            ipo_specifics = None
             result["errors"].append(f"_analyze_ipo_specifics failed: {e}")
         result["timings_sec"]["ipo_specifics"] = round(time.time() - t2, 1)
 
@@ -390,8 +396,55 @@ def run_provider_on_fixture(provider, fixture_name, prospectus_text, expected):
             # No hand-verified ground truth for competitive positioning (subjective) -
             # recorded for manual review only, not scored pass/fail.
         except Exception as e:
+            benchmarking = None
             result["errors"].append(f"_perform_benchmarking_analysis failed: {e}")
         result["timings_sec"]["benchmarking"] = round(time.time() - t3, 1)
+
+        # STEP 4/4 equivalent: exercise the same self-critique/retry loop as
+        # analyze_prospectus_comprehensive (see src/analyzers/llm_prospectus_analyzer.py),
+        # reusing the financial_metrics/benchmarking/ipo_specifics already extracted above
+        # rather than re-running the whole pipeline, so this costs exactly one extra
+        # critique call plus one extra extraction call per retry the critique itself requests.
+        t4 = time.time()
+        if metrics is not None and benchmarking is not None and ipo_specifics is not None:
+            try:
+                reflection_attempts = 0
+                reflection = analyzer._critique_extraction(
+                    metrics, benchmarking, ipo_specifics, company_name,
+                    attempt=0, max_attempts=MAX_REFLECTION_RETRIES
+                )
+                while reflection.ran and reflection.should_retry and reflection_attempts < MAX_REFLECTION_RETRIES:
+                    reflection_attempts += 1
+                    metrics = analyzer._extract_financial_metrics(
+                        prospectus_text, company_name, feedback=reflection.issues
+                    )
+                    reflection = analyzer._critique_extraction(
+                        metrics, benchmarking, ipo_specifics, company_name,
+                        attempt=reflection_attempts, max_attempts=MAX_REFLECTION_RETRIES
+                    )
+                reflection.iterations_used = reflection_attempts
+                result["reflection"] = to_plain(reflection)
+
+                result["checks_after_reflection"] = score_financial_metrics(metrics, expected)
+                result["raw_financial_metrics_after_reflection"] = to_plain(metrics)
+                # "checks" stays the score reported/summarized by default - post-reflection,
+                # since that's what analyze_prospectus_comprehensive actually returns now.
+                result["checks"].extend(result["checks_after_reflection"])
+
+                try:
+                    verdict_check, extracted_verdict, truth_verdict = score_final_verdict(metrics, expected)
+                    result["checks"].append(verdict_check)
+                    result["final_verdict"] = {"extracted": extracted_verdict, "ground_truth": truth_verdict}
+                except Exception as e:
+                    result["errors"].append(f"score_final_verdict (after reflection) failed: {e}")
+            except Exception as e:
+                result["errors"].append(f"reflection loop failed: {e}")
+        else:
+            # Financial metrics, benchmarking, or IPO specifics extraction failed above -
+            # fall back to scoring whatever financial metrics we do have, unreflected.
+            if metrics is not None:
+                result["checks"].extend(result.get("checks_before_reflection", []))
+        result["timings_sec"]["reflection"] = round(time.time() - t4, 1)
 
         result["timings_sec"]["total"] = round(time.time() - t0, 1)
 
@@ -420,8 +473,49 @@ def build_markdown_report(all_results, generated_at):
         checks = res["checks"]
         n_pass = sum(1 for c in checks if c["result"] == "PASS")
         n_total = len(checks)
-        lines.append(f"**Score: {n_pass}/{n_total} checks passed**")
+        lines.append(f"**Score: {n_pass}/{n_total} checks passed** (post-reflection)")
         lines.append("")
+
+        reflection = res.get("reflection")
+        before = res.get("checks_before_reflection")
+        after = res.get("checks_after_reflection")
+        if reflection is not None and before is not None and after is not None:
+            n_before = sum(1 for c in before if c["result"] == "PASS")
+            n_after = sum(1 for c in after if c["result"] == "PASS")
+            lines.append(
+                f"**Self-critique/reflection: {reflection['iterations_used']} re-extraction "
+                f"attempt(s) used** (cap: {MAX_REFLECTION_RETRIES}), "
+                f"confidence={reflection['confidence']}"
+            )
+            lines.append(
+                f"Financial-metric checks: {n_before}/{len(before)} before reflection -> "
+                f"{n_after}/{len(after)} after reflection"
+            )
+            if reflection["issues"]:
+                lines.append("Issues the critique pass flagged:")
+                for issue in reflection["issues"]:
+                    lines.append(f"- {issue}")
+            before_by_name = {c["check"]: c["result"] for c in before}
+            after_by_name = {c["check"]: c["result"] for c in after}
+            flips = [
+                f"- `{name}`: {before_by_name[name]} -> {after_by_name[name]}"
+                for name in before_by_name
+                if name in after_by_name and before_by_name[name] != after_by_name[name]
+            ]
+            if flips:
+                lines.append("Checks that flipped due to reflection:")
+                lines.extend(flips)
+            fv_before = res.get("final_verdict_before_reflection")
+            fv_after = res.get("final_verdict")
+            if fv_before and fv_after:
+                rec_before = fv_before["extracted"]["recommendation"]
+                rec_after = fv_after["extracted"]["recommendation"]
+                if rec_before != rec_after:
+                    lines.append(
+                        f"**Final verdict changed due to reflection: {rec_before} -> {rec_after}**"
+                    )
+            lines.append("")
+
         final_verdict = res.get("final_verdict")
         if final_verdict:
             ev, tv = final_verdict["extracted"], final_verdict["ground_truth"]

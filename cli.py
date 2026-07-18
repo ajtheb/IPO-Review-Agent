@@ -34,7 +34,6 @@ def print_report(report, format_type='text'):
             },
             'analysis': {
                 'long_term_score': report.long_term_score,
-                'listing_gain_prediction': report.listing_gain_prediction,
                 'recommendation': report.recommendation.value if report.recommendation else None,
                 'sentiment_score': report.news_analysis.sentiment_score
             },
@@ -64,10 +63,7 @@ def print_report(report, format_type='text'):
         print("\n📈 KEY METRICS")
         print("-" * 40)
         print(f"Long-term Score: {report.long_term_score:.1f}/10")
-        
-        if report.listing_gain_prediction is not None:
-            print(f"Predicted Listing Gains: {report.listing_gain_prediction:.1f}%")
-        
+
         if report.recommendation:
             rec_emoji = {
                 "Strong Buy": "🟢",
@@ -150,6 +146,10 @@ def main():
     parser.add_argument("--exchange", default="NSE & BSE", help="Expected listing exchange")
     parser.add_argument("--format", choices=['text', 'json'], default='text',
                        help="Output format (default: text)")
+    parser.add_argument("--provider", choices=['openai', 'anthropic', 'groq', 'gemini'], default='openai',
+                       help="LLM provider to use (default: openai)")
+    parser.add_argument("--no-reflection", action="store_true",
+                       help="Skip the STEP 4/4 self-critique/reflection pass")
     parser.add_argument("--verbose", "-v", action="store_true",
                        help="Enable verbose logging")
     
@@ -173,7 +173,7 @@ def main():
         }
         
         # Initialize agent and perform analysis
-        agent = IPOReviewAgent()
+        agent = IPOReviewAgent(llm_provider=args.provider, enable_reflection=not args.no_reflection)
         report = agent.analyze_ipo(args.company_name, ipo_details)
         
         # Print results

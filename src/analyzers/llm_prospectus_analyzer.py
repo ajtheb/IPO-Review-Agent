@@ -8,6 +8,7 @@ P/E ratios, benchmarking information, and other critical details from IPO prospe
 import os
 import json
 import re
+from difflib import SequenceMatcher
 from typing import Dict, List, Optional, Any, Tuple
 from dataclasses import dataclass, asdict, field
 from pathlib import Path
@@ -342,7 +343,54 @@ class LLMProspectusAnalyzer:
         except Exception as e:
             # Don't fail the main operation if saving fails
             logger.warning(f"Failed to save context chunks: {e}")
-    
+
+    _NUMBER_RE = re.compile(r'\d[\d,]*\.?\d*')
+
+    @classmethod
+    def _chunk_fingerprint(cls, text: str) -> Tuple[str, frozenset]:
+        """Normalized whitespace text plus the set of numeric tokens in a chunk.
+
+        Used for near-duplicate detection: two chunks can wrap the same table
+        differently (different line breaks/prose) while containing identical
+        numbers, which an exact-text hash would treat as distinct.
+        """
+        normalized = re.sub(r'\s+', ' ', text).strip().lower()
+        numbers = frozenset(
+            tok.replace(',', '') for tok in cls._NUMBER_RE.findall(text)
+            if len(tok.replace(',', '').replace('.', '')) >= 2
+        )
+        return normalized, numbers
+
+    @classmethod
+    def _is_near_duplicate_chunk(
+        cls,
+        text: str,
+        seen_fingerprints: List[Tuple[str, frozenset]],
+        text_similarity_threshold: float = 0.85,
+        number_overlap_threshold: float = 0.8
+    ) -> bool:
+        """Check if `text` is a near-duplicate of any previously seen chunk.
+
+        Exact-hash dedup only catches byte-identical chunks. This also catches:
+        - one chunk being a strict subset/superset of another (e.g. a shorter
+          retrieval wholly contained in a longer one covering the same table)
+        - chunks with near-identical numeric content but different wrapping
+        - chunks with high textual similarity after whitespace normalization
+        """
+        normalized, numbers = cls._chunk_fingerprint(text)
+        for seen_normalized, seen_numbers in seen_fingerprints:
+            if normalized == seen_normalized:
+                return True
+            if normalized in seen_normalized or seen_normalized in normalized:
+                return True
+            if numbers and seen_numbers:
+                overlap = len(numbers & seen_numbers) / min(len(numbers), len(seen_numbers))
+                if overlap >= number_overlap_threshold:
+                    return True
+            if SequenceMatcher(None, normalized, seen_normalized).ratio() >= text_similarity_threshold:
+                return True
+        return False
+
     def search_brave_for_ipo_context(self, company_name: str, max_results: int = 5) -> List[Dict[str, str]]:
         """
         Search for IPO information using Brave Search API.
@@ -1327,11 +1375,12 @@ class LLMProspectusAnalyzer:
             logger.error(f"Error retrieving table chunks: {e}")
             return []
     
-    def analyze_prospectus_comprehensive(self, 
-                                       pdf_text: str, 
+    def analyze_prospectus_comprehensive(self,
+                                       pdf_text: str,
                                        company_name: str,
                                        sector: str = "",
-                                       pdf_path: str = None) -> Tuple[LLMFinancialMetrics, BenchmarkingAnalysis, IPOSpecificMetrics]:
+                                       pdf_path: str = None,
+                                       enable_reflection: bool = True) -> Tuple[LLMFinancialMetrics, BenchmarkingAnalysis, IPOSpecificMetrics]:
         """
         Comprehensive LLM-powered analysis of IPO prospectus with vector DB enhancement.
         Performs complete analysis including financial metrics, benchmarking, and IPO specifics.
@@ -1387,31 +1436,35 @@ class LLMProspectusAnalyzer:
         print("\n" + "=" * 80)
         print("STEP 4/4: SELF-CRITIQUE / REFLECTION PASS")
         print("=" * 80)
-        attempt = 0
-        reflection = self._critique_extraction(
-            financial_metrics, benchmarking, ipo_specifics, company_name,
-            attempt=attempt, max_attempts=MAX_REFLECTION_RETRIES
-        )
-        while reflection.ran and reflection.should_retry and attempt < MAX_REFLECTION_RETRIES:
-            attempt += 1
-            print(f"Reflection requested a re-extraction - attempt {attempt}/{MAX_REFLECTION_RETRIES}")
-            print(f"Issues driving retry: {reflection.issues}")
-            financial_metrics = self._extract_financial_metrics(
-                pdf_text, company_name, pdf_path, feedback=reflection.issues
-            )
+        if enable_reflection:
+            attempt = 0
             reflection = self._critique_extraction(
                 financial_metrics, benchmarking, ipo_specifics, company_name,
                 attempt=attempt, max_attempts=MAX_REFLECTION_RETRIES
             )
-        reflection.iterations_used = attempt
-        self._last_reflection = reflection
-        if reflection.ran:
-            print(
-                f"Reflection complete after {attempt} retry(ies): "
-                f"{len(reflection.issues)} issue(s) flagged, confidence={reflection.confidence}"
-            )
+            while reflection.ran and reflection.should_retry and attempt < MAX_REFLECTION_RETRIES:
+                attempt += 1
+                print(f"Reflection requested a re-extraction - attempt {attempt}/{MAX_REFLECTION_RETRIES}")
+                print(f"Issues driving retry: {reflection.issues}")
+                financial_metrics = self._extract_financial_metrics(
+                    pdf_text, company_name, pdf_path, feedback=reflection.issues
+                )
+                reflection = self._critique_extraction(
+                    financial_metrics, benchmarking, ipo_specifics, company_name,
+                    attempt=attempt, max_attempts=MAX_REFLECTION_RETRIES
+                )
+            reflection.iterations_used = attempt
+            self._last_reflection = reflection
+            if reflection.ran:
+                print(
+                    f"Reflection complete after {attempt} retry(ies): "
+                    f"{len(reflection.issues)} issue(s) flagged, confidence={reflection.confidence}"
+                )
+            else:
+                print("Reflection pass did not run (skipped or failed) - proceeding with original extraction")
         else:
-            print("Reflection pass did not run (skipped or failed) - proceeding with original extraction")
+            print("Reflection disabled for this run - proceeding with original extraction")
+            self._last_reflection = None
 
         print("\n" + "=" * 80)
         print("COMPREHENSIVE ANALYSIS COMPLETE")
@@ -1488,16 +1541,16 @@ class LLMProspectusAnalyzer:
             
             all_chunks = []
             all_chunk_metadata = []
-            seen_hashes = set()  # For deduplication
-            
+            seen_fingerprints = []  # For near-duplicate deduplication
+
             # Execute each specialized query
             for query_info in specialized_queries:
                 query = query_info["query"]
                 description = query_info["description"]
                 n_results = query_info["n_results"]
-                
+
                 print(f"  Querying for {description}...")
-                
+
                 # Try to retrieve table chunks first (higher precision)
                 try:
                     table_chunks = self.retrieve_table_chunks(
@@ -1506,21 +1559,20 @@ class LLMProspectusAnalyzer:
                         n_results=n_results,
                         only_financial_tables=True
                     )
-                    
+
                     if table_chunks:
                         print(f"    Found {len(table_chunks)} table chunks for {description}")
                         for chunk_data in table_chunks:
                             chunk_text = chunk_data['document']
-                            # Deduplicate using hash
-                            chunk_hash = hash(chunk_text)
-                            if chunk_hash not in seen_hashes:
+                            # Deduplicate using normalized text + numeric-content near-match
+                            if not self._is_near_duplicate_chunk(chunk_text, seen_fingerprints):
                                 all_chunks.append(chunk_text)
                                 all_chunk_metadata.append({
                                     "query": query,
                                     "description": description,
                                     "metadata": chunk_data['metadata']
                                 })
-                                seen_hashes.add(chunk_hash)
+                                seen_fingerprints.append(self._chunk_fingerprint(chunk_text))
                     else:
                         # Fallback to regular retrieval if no table chunks found
                         print(f"    No table chunks found, using regular retrieval...")
@@ -1530,22 +1582,21 @@ class LLMProspectusAnalyzer:
                             n_results=n_results,
                             prioritize_tables=True
                         )
-                        
+
                         for chunk_text in regular_chunks:
-                            chunk_hash = hash(chunk_text)
-                            if chunk_hash not in seen_hashes:
+                            if not self._is_near_duplicate_chunk(chunk_text, seen_fingerprints):
                                 all_chunks.append(chunk_text)
                                 all_chunk_metadata.append({
                                     "query": query,
                                     "description": description,
                                     "metadata": {"source": "regular_retrieval"}
                                 })
-                                seen_hashes.add(chunk_hash)
-                
+                                seen_fingerprints.append(self._chunk_fingerprint(chunk_text))
+
                 except Exception as e:
                     print(f"    Error retrieving {description}: {e}")
                     continue
-            
+
             print(f"Retrieved {len(all_chunks)} unique chunks across all queries")
             
             if all_chunks:
@@ -1796,15 +1847,15 @@ If data is unclear or not found, use null - NEVER make assumptions."""
             ]
             
             all_chunks = []
-            seen_hashes = set()
-            
+            seen_fingerprints = []
+
             for query_info in specialized_queries:
                 query = query_info["query"]
                 description = query_info["description"]
                 n_results = query_info["n_results"]
-                
+
                 print(f"  Querying for {description}...")
-                
+
                 try:
                     chunks = self.retrieve_relevant_context(
                         query=query,
@@ -1812,14 +1863,13 @@ If data is unclear or not found, use null - NEVER make assumptions."""
                         n_results=n_results,
                         prioritize_tables=False
                     )
-                    
+
                     if chunks:
                         print(f"    Found {len(chunks)} chunks for {description}")
                         for chunk_text in chunks:
-                            chunk_hash = hash(chunk_text)
-                            if chunk_hash not in seen_hashes:
+                            if not self._is_near_duplicate_chunk(chunk_text, seen_fingerprints):
                                 all_chunks.append(chunk_text)
-                                seen_hashes.add(chunk_hash)
+                                seen_fingerprints.append(self._chunk_fingerprint(chunk_text))
                 except Exception as e:
                     print(f"    Error retrieving {description}: {e}")
                     continue
@@ -1951,15 +2001,15 @@ If data is unclear or not found, use null - NEVER make assumptions."""
             ]
             
             all_chunks = []
-            seen_hashes = set()
-            
+            seen_fingerprints = []
+
             for query_info in specialized_queries:
                 query = query_info["query"]
                 description = query_info["description"]
                 n_results = query_info["n_results"]
-                
+
                 print(f"  Querying for {description}...")
-                
+
                 try:
                     chunks = self.retrieve_relevant_context(
                         query=query,
@@ -1967,14 +2017,13 @@ If data is unclear or not found, use null - NEVER make assumptions."""
                         n_results=n_results,
                         prioritize_tables=False
                     )
-                    
+
                     if chunks:
                         print(f"    Found {len(chunks)} chunks for {description}")
                         for chunk_text in chunks:
-                            chunk_hash = hash(chunk_text)
-                            if chunk_hash not in seen_hashes:
+                            if not self._is_near_duplicate_chunk(chunk_text, seen_fingerprints):
                                 all_chunks.append(chunk_text)
-                                seen_hashes.add(chunk_hash)
+                                seen_fingerprints.append(self._chunk_fingerprint(chunk_text))
                 except Exception as e:
                     print(f"    Error retrieving {description}: {e}")
                     continue
@@ -3150,17 +3199,17 @@ data (retrying will not help)."""
             raise
 
 # Enhanced integration functions
-def integrate_llm_analysis(company_name: str, pdf_text: str, sector: str = "", 
-                        provider: str = "openai", pdf_path: str = None, 
-                        use_vector_db: bool = True) -> Dict[str, Any]:
+def integrate_llm_analysis(company_name: str, pdf_text: str, sector: str = "",
+                        provider: str = "openai", pdf_path: str = None,
+                        use_vector_db: bool = True, enable_reflection: bool = True) -> Dict[str, Any]:
     """
     Integrate LLM-powered analysis into existing IPO data structure with vector DB and web search support.
     """
     analyzer = LLMProspectusAnalyzer(provider=provider, use_vector_db=use_vector_db)
-    
+
     # Perform comprehensive analysis (includes vector storage)
     financial_metrics, benchmarking, ipo_specifics = analyzer.analyze_prospectus_comprehensive(
-        pdf_text, company_name, sector, pdf_path
+        pdf_text, company_name, sector, pdf_path, enable_reflection=enable_reflection
     )
     
     # Search Brave for additional context

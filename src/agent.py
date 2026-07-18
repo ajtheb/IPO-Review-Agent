@@ -87,7 +87,7 @@ Format part 2 in clear, professional language suitable for investment decision-m
 class IPOReviewAgent:
     """Main IPO Review Agent class with LLM-powered analysis."""
 
-    def __init__(self, use_llm: bool = True, llm_provider: str = "openai"):
+    def __init__(self, use_llm: bool = True, llm_provider: str = "openai", enable_reflection: bool = True):
         self.data_manager = DataSourceManager()
         self.sentiment_analyzer = SentimentAnalyzer()
         self.risk_analyzer = RiskAnalyzer()
@@ -96,7 +96,7 @@ class IPOReviewAgent:
         # Initialize financial analyzer (enhanced if available and requested)
         if use_llm and ENHANCED_ANALYZER_AVAILABLE:
             try:
-                self.financial_analyzer = EnhancedFinancialAnalyzer(llm_provider=llm_provider)
+                self.financial_analyzer = EnhancedFinancialAnalyzer(llm_provider=llm_provider, enable_reflection=enable_reflection)
                 self.enhanced_analysis = True
                 logger.info("Enhanced LLM-powered financial analyzer initialized")
             except Exception as e:
@@ -261,7 +261,7 @@ class IPOReviewAgent:
                 "Financial metrics availability: "
                 f"revenue_growth_rate={financial_metrics.revenue_growth_rate is not None}, "
                 f"profit_margin={financial_metrics.profit_margin is not None}, "
-                f"roe={getattr(financial_metrics, 'roe', None) is not None}, "
+                f"roe={financial_metrics.return_on_equity is not None}, "
                 f"current_ratio={getattr(financial_metrics, 'current_ratio', None) is not None}, "
                 f"debt_to_equity={getattr(financial_metrics, 'debt_to_equity', None) is not None}"
             )
@@ -535,19 +535,32 @@ class IPOReviewAgent:
         score = 5.0  # Base score
         logger.debug(f"Calculating long-term score with base score: {score}/10")
 
-        # Financial factors
-        if financial_metrics.profit_margin and financial_metrics.profit_margin > 0.1:
+        # Financial factors.
+        # Thresholds recalibrated for realistic Indian SME/mid-cap IPO issuers
+        # (manufacturing/textile-type margins and growth), not just companies
+        # exceptional enough to clear a 15%+ margin or 20%+ growth bar - those
+        # bars meant most real, moderately-healthy issuers (e.g. a 6-8% margin,
+        # 12-15% growth) got zero credit here, which is most of why this score
+        # kept landing on the same base+risk-bonus total regardless of how the
+        # company actually performed.
+        if financial_metrics.profit_margin and financial_metrics.profit_margin > 0.08:
             score += 1.5
             logger.debug(f"High profit margin bonus: +1.5 (new score: {score:.1f}/10)")
+        elif financial_metrics.profit_margin and financial_metrics.profit_margin > 0.03:
+            score += 0.75
+            logger.debug(f"Moderate profit margin bonus: +0.75 (new score: {score:.1f}/10)")
         elif financial_metrics.profit_margin and financial_metrics.profit_margin < 0:
             score -= 2
             logger.debug(f"Negative profit margin penalty: -2.0 (new score: {score:.1f}/10)")
         elif not financial_metrics.profit_margin:
             logger.debug("Profit margin not available - no adjustment made")
 
-        if financial_metrics.revenue_growth_rate and financial_metrics.revenue_growth_rate > 0.15:
+        if financial_metrics.revenue_growth_rate and financial_metrics.revenue_growth_rate > 0.12:
             score += 1.5
             logger.debug(f"Strong revenue growth bonus: +1.5 (new score: {score:.1f}/10)")
+        elif financial_metrics.revenue_growth_rate and financial_metrics.revenue_growth_rate > 0.05:
+            score += 0.75
+            logger.debug(f"Moderate revenue growth bonus: +0.75 (new score: {score:.1f}/10)")
         elif not financial_metrics.revenue_growth_rate:
             logger.debug("Revenue growth rate not available - no growth bonus applied")
 

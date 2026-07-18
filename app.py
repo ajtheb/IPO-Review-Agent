@@ -171,7 +171,7 @@ def ipo_analysis_tab():
         gmp_result = None
 
         # Single agent instance reused for both the GMP and full-analysis calls
-        agent = IPOReviewAgent(use_llm=use_llm_analysis, llm_provider=selected_llm_provider)
+        agent = IPOReviewAgent(use_llm=use_llm_analysis, llm_provider=selected_llm_provider, enable_reflection=False)
 
         # Run GMP analysis FIRST if enabled
         if use_gmp_analysis:
@@ -639,7 +639,6 @@ def display_analysis_report(report: IPOAnalysisReport, gmp_result: dict = None):
 
     metric_specs = [
         ("Long-Term Score", report.long_term_score, lambda v: f"{v:.1f}/10"),
-        ("Predicted Listing Gain", report.listing_gain_prediction, lambda v: f"{v:+.1f}%"),
         (
             "Overall Risk",
             report.risk_assessment.overall_risk.value if report.risk_assessment else None,
